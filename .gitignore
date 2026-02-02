@@ -34,6 +34,9 @@ local.properties
 *.keystore
 !debug.keystore
 .kotlin/
+android/build/
+android/app/build/
+android/.gradle/
 
 # node.js
 #
@@ -73,3 +76,15 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# VS Code
+.vscode/
+
+# Environment
+.env
+.env.local
+.env.production
+.env.development
+
+# Generated documentation/metadata
+*.resolved
