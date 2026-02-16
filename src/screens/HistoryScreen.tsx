@@ -714,9 +714,9 @@ const HistoryPage = React.memo(
           renderItem={({ item }) => (
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionTitle}>{item.title}</Text>
-              // ... inside HistoryPage → FlatList renderItem
+              {/* // ... inside HistoryPage → FlatList renderItem */}
 
-              // Inside HistoryPage → FlatList renderItem
+              {/* // Inside HistoryPage → FlatList renderItem */}
 
               {item.data.map((log) => {
                 const displayLog = source === 'personal'
