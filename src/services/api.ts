@@ -158,5 +158,6 @@ export const api = {
             console.error('Profile Fetch Error:', error.response?.data || error.message);
             throw error;
         }
-    }
+    },
+    
 };
