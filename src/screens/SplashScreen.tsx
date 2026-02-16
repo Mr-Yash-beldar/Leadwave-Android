@@ -13,14 +13,14 @@ export const SplashScreen: React.FC = () => {
                     style={styles.logo}
                     resizeMode="contain"
                 />
-                <Text style={styles.appName}>Leadwave</Text>
+                <Text style={styles.appName}>LeadVidya</Text>
                 <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 20 }} />
                 <Text style={styles.loadingText}>Building connection with server...</Text>
             </View>
 
             <View style={styles.footerContainer}>
                 <Text style={styles.footerText}>Made by</Text>
-                <Text style={styles.footerBrand}>YSPInfotech</Text>
+                <Text style={styles.footerBrand}>YSPInfotech Team</Text>
             </View>
         </View>
     );
@@ -40,8 +40,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     logo: {
-        width: width * 0.4,
-        height: width * 0.4,
+        width: width * 0.5,
+        height: width * 0.6,
         marginBottom: 20,
     },
     appName: {
