@@ -76,7 +76,7 @@ interface CallLogItemProps {
   simCount?: number;
   isLeadLog?: boolean;
   onAddLead?: (number: string) => void;
-  onDispose?: (item: any) => void; // Add dispose callback
+  onDispose?: (item: any) => void;
 }
 
 export const CallLogItem: React.FC<CallLogItemProps> = ({
@@ -91,8 +91,8 @@ export const CallLogItem: React.FC<CallLogItemProps> = ({
   const [loading, setLoading] = useState(false);
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [checkingLead, setCheckingLead] = useState(false);
-  
-  // Add Lead Form State
+
+  // Form state
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [selectedCampaign, setSelectedCampaign] = useState<string>('');
@@ -100,17 +100,30 @@ export const CallLogItem: React.FC<CallLogItemProps> = ({
 
   const { color, Icon: TypeIcon } = getCallTypeInfo(item.type);
 
-  const displayName = isLeadLog
-    ? item.leadName || item.name || 'Unknown Lead'
-    : item.name || 'Unknown';
+  // ────────────────────────────────────────────────
+  // Decision logic — same rules for both tabs
+  // ────────────────────────────────────────────────
+  const isMyLead = !!(item.leadId || item.leadData);
+
+  const showAddLeadButton =
+    !isLeadLog &&           // never in "Lead Call History" tab
+    !isMyLead &&            // only if not already my lead
+    !item.disposed;
+
+  const showDisposeButton =
+    !item.disposed &&
+    (isLeadLog || isMyLead);   // show in leads tab OR personal + my lead
+
+  // Display name
+  const displayName = isMyLead
+    ? (item.leadName || `${item.leadData?.firstName || ''} ${item.leadData?.lastName || ''}`.trim() || 'Unknown Lead')
+    : (item.name || item.phoneNumber || 'Unknown');
 
   const displayNumber = item.phoneNumber || item.leadMobile || 'No number';
 
   const handleCopy = () => {
     Clipboard.setString(displayNumber);
-    if (ToastAndroid) {
-      ToastAndroid.show('Number copied', ToastAndroid.SHORT);
-    }
+    ToastAndroid?.show('Number copied', ToastAndroid.SHORT);
   };
 
   const handleMessage = () => {
@@ -137,13 +150,12 @@ export const CallLogItem: React.FC<CallLogItemProps> = ({
     navigation.navigate('ContactAnalytics', {
       phoneNumber: displayNumber,
       name: displayName,
-      isLead: isLeadLog,
+      isLead: isMyLead,
     });
   };
 
-  // Handle Lead Press - Navigate to Lead Details
   const handleLeadPress = () => {
-    if (isLeadLog && (item.leadData || item.leadId)) {
+    if (isMyLead) {
       if (item.leadData) {
         navigation.navigate('LeadDetails', { lead: item.leadData });
       } else if (item.leadId) {
@@ -152,44 +164,30 @@ export const CallLogItem: React.FC<CallLogItemProps> = ({
     }
   };
 
-  // Handle Dispose Press
-  // In CallLogItem.tsx, check the handleDisposePress function:
-
-const handleDisposePress = () => {
-  console.log('Dispose pressed for:', displayNumber); // Add this for debugging
-  
-  if (onDispose) {
-    // If parent provided onDispose, call it
-    onDispose(item);
-  } else {
-    // Fallback dispose behavior
-    Alert.alert(
-      'Dispose Lead',
-      'Are you sure you want to dispose this lead?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Dispose',
-          style: 'destructive',
-          onPress: () => {
-            // Navigate to lead details for disposal
-            if (item.leadData) {
-              navigation.navigate('LeadDetails', { 
-                lead: item.leadData,
-                fromCall: true
-              });
-            } else if (item.leadId) {
-              navigation.navigate('LeadDetails', { 
-                leadId: item.leadId,
-                fromCall: true
-              });
+  const handleDisposePress = () => {
+    if (onDispose) {
+      onDispose(item);
+    } else {
+      Alert.alert(
+        'Dispose Lead',
+        'Are you sure you want to dispose this lead?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Dispose',
+            style: 'destructive',
+            onPress: () => {
+              if (item.leadData) {
+                navigation.navigate('LeadDetails', { lead: item.leadData, fromCall: true });
+              } else if (item.leadId) {
+                navigation.navigate('LeadDetails', { leadId: item.leadId, fromCall: true });
+              }
             }
           }
-        }
-      ]
-    );
-  }
-};
+        ]
+      );
+    }
+  };
 
   const checkIfLeadExists = async () => {
     try {
@@ -199,9 +197,7 @@ const handleDisposePress = () => {
         Alert.alert(
           'Already a Lead',
           `This number is already assigned to ${res.assignedTo.name || 'another user'}`,
-          [
-            { text: 'OK' }
-          ]
+          [{ text: 'OK' }]
         );
         return true;
       }
@@ -217,7 +213,7 @@ const handleDisposePress = () => {
   const handleAddLeadPress = async () => {
     const exists = await checkIfLeadExists();
     if (exists) return;
-    
+
     await fetchCampaigns();
     setIsAddLeadModalVisible(true);
   };
@@ -226,9 +222,7 @@ const handleDisposePress = () => {
     try {
       setLoadingCampaigns(true);
       const res = await api.getCampaigns();
-      if (res && res.data) {
-        setCampaigns(res.data);
-      }
+      if (res?.data) setCampaigns(res.data);
     } catch (error) {
       console.log('Error fetching campaigns', error);
     } finally {
@@ -249,15 +243,12 @@ const handleDisposePress = () => {
         lastName,
         phone: displayNumber,
         campaign: selectedCampaign,
-        date: new Date().toISOString()
+        date: new Date().toISOString(),
       });
       Alert.alert('Success', 'Lead created successfully!');
       setIsAddLeadModalVisible(false);
       resetForm();
-      
-      if (onAddLead) {
-        onAddLead(displayNumber);
-      }
+      if (onAddLead) onAddLead(displayNumber);
     } catch (error) {
       Alert.alert('Error', 'Failed to create lead.');
       console.error(error);
@@ -280,24 +271,24 @@ const handleDisposePress = () => {
   return (
     <>
       <View style={styles.card}>
-        {/* Top Section – Name, Number, Meta */}
-        <TouchableOpacity 
-          style={styles.topSection} 
-          onPress={isLeadLog ? handleLeadPress : handleAnalytics} 
+        <TouchableOpacity
+          style={styles.topSection}
+          onPress={isMyLead ? handleLeadPress : handleAnalytics}
           activeOpacity={0.7}
         >
           <View style={[styles.avatar, { backgroundColor: color }]}>
-            {isLeadLog ? <User size={20} color="white" /> : <TypeIcon size={20} color="white" />}
+            {isMyLead ? <User size={20} color="white" /> : <TypeIcon size={20} color="white" />}
           </View>
 
           <View style={styles.info}>
             <Text style={styles.name} numberOfLines={1}>
+              
               {displayName}
             </Text>
+            
             <Text style={styles.number}>{displayNumber}</Text>
 
-            {/* Lead extra info */}
-            {isLeadLog && (
+            {isMyLead && (
               <View style={styles.leadExtra}>
                 {item.leadEmail && (
                   <View style={styles.leadRow}>
@@ -313,13 +304,13 @@ const handleDisposePress = () => {
                 )}
               </View>
             )}
-            
-            {/* Show disposed tag if applicable */}
-            {/* {item.disposed && (
+
+            {item.disposed && (
               <View style={styles.disposedTag}>
+                <CheckCircle size={14} color="#22c55e" />
                 <Text style={styles.disposedText}>Disposed</Text>
               </View>
-            )} */}
+            )}
           </View>
 
           <View style={styles.meta}>
@@ -333,12 +324,10 @@ const handleDisposePress = () => {
           </View>
         </TouchableOpacity>
 
-        {/* Action Row */}
         <View style={styles.actionRow}>
-          {/* Add Lead Button - Show for non-lead logs only */}
-          {!isLeadLog && (
-            <TouchableOpacity 
-              style={styles.actionButton} 
+          {showAddLeadButton && (
+            <TouchableOpacity
+              style={styles.actionButton}
               onPress={handleAddLeadPress}
               disabled={checkingLead}
             >
@@ -349,36 +338,31 @@ const handleDisposePress = () => {
               )}
             </TouchableOpacity>
           )}
-          
-          {/* Dispose Button - Show for lead logs that are not disposed */}
-          {/* {isLeadLog && !item.disposed && ( */}
-            <TouchableOpacity 
-              style={styles.actionButton} 
-              onPress={handleDisposePress}
-            >
-              <Trash2 size={20} color={colors.error} />
+
+          {showDisposeButton && (
+            <TouchableOpacity style={styles.actionButton} onPress={handleDisposePress}>
+              <Trash2 size={20} color={colors.error || '#ef4444'} />
             </TouchableOpacity>
-          {/* )} */}
-          
+          )}
+
           <TouchableOpacity style={styles.actionButton} onPress={handleCopy}>
             <Copy size={20} color="#9E9E9E" />
           </TouchableOpacity>
-          
+
           {/* <TouchableOpacity style={styles.actionButton} onPress={handleMessage}>
             <MessageSquare size={20} color="#546E7A" />
-          </TouchableOpacity>
-          
+          </TouchableOpacity> */}
+
           <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp}>
             <MessageCircle size={20} color="#25D366" />
           </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
+
+          {/* <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
             <Phone size={20} color="#546E7A" />
           </TouchableOpacity> */}
         </View>
 
-        {/* Recording Section */}
-        <View style={styles.recordingSection}>
+        {/* <View style={styles.recordingSection}>
           {item.recordingUrl ? (
             <TouchableOpacity
               style={styles.recordingButton}
@@ -389,16 +373,13 @@ const handleDisposePress = () => {
           ) : (
             <Text style={styles.noRecordingText}>No recording</Text>
           )}
-        </View>
+        </View> */}
 
-        {/* Notes / Call Status */}
-        {(isLeadLog && (item.notes || item.callStatus)) && (
+        {isMyLead && (item.notes || item.callStatus) && (
           <View style={styles.noteSection}>
             <StickyNote size={16} color="#9E9E9E" />
             <View style={{ flex: 1, marginLeft: 8 }}>
-              {item.callStatus && (
-                <Text style={styles.statusText}>Status: {item.callStatus}</Text>
-              )}
+              {item.callStatus && <Text style={styles.statusText}>Status: {item.callStatus}</Text>}
               {item.notes && (
                 <Text style={styles.noteText} numberOfLines={2}>
                   {item.notes}
@@ -408,8 +389,7 @@ const handleDisposePress = () => {
           </View>
         )}
 
-        {/* Generic note section for personal logs */}
-        {!isLeadLog && (
+        {!isMyLead && !isLeadLog && (
           <TouchableOpacity style={styles.noteSection}>
             <StickyNote size={14} color="#9E9E9E" />
             <Text style={styles.noteText}>Tap to add note & tag</Text>
@@ -418,16 +398,8 @@ const handleDisposePress = () => {
       </View>
 
       {/* Add Lead Modal */}
-      <Modal
-        visible={isAddLeadModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={closeModal}
-      >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalOverlay}
-        >
+      <Modal visible={isAddLeadModalVisible} animationType="slide" transparent={true} onRequestClose={closeModal}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add New Lead</Text>
@@ -465,13 +437,18 @@ const handleDisposePress = () => {
                 {loadingCampaigns ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
-                  campaigns.map(c => (
+                  campaigns.map((c) => (
                     <TouchableOpacity
                       key={c._id}
                       style={[styles.campaignChip, selectedCampaign === c._id && styles.campaignChipSelected]}
                       onPress={() => setSelectedCampaign(c._id)}
                     >
-                      <Text style={[styles.campaignChipText, selectedCampaign === c._id && styles.campaignChipTextSelected]}>
+                      <Text
+                        style={[
+                          styles.campaignChipText,
+                          selectedCampaign === c._id && styles.campaignChipTextSelected,
+                        ]}
+                      >
                         {c.name}
                       </Text>
                     </TouchableOpacity>
@@ -483,9 +460,9 @@ const handleDisposePress = () => {
                 <TouchableOpacity style={styles.cancelButton} onPress={closeModal}>
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.saveButton, loading && styles.saveButtonDisabled]} 
-                  onPress={handleCreateLead} 
+                <TouchableOpacity
+                  style={[styles.saveButton, loading && styles.saveButtonDisabled]}
+                  onPress={handleCreateLead}
                   disabled={loading}
                 >
                   {loading ? (
@@ -561,15 +538,18 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   disposedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFEBEE',
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingVertical: 4,
+    borderRadius: 12,
     alignSelf: 'flex-start',
-    marginTop: 4,
+    marginTop: 6,
+    gap: 4,
   },
   disposedText: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.error,
     fontWeight: '600',
   },
@@ -630,7 +610,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     fontStyle: 'italic',
-    marginLeft: 4,
   },
   noteSection: {
     backgroundColor: '#F5F5F5',
@@ -650,7 +629,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginBottom: 4,
   },
-  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

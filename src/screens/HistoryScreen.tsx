@@ -89,7 +89,7 @@ export const HistoryScreen: React.FC = () => {
   const [activeCallNumber, setActiveCallNumber] = useState('');
 
   const { user } = useAuth();
-  
+
   // ============ ALL useRef HOOKS ============
   const pagerRef = useRef<FlatList>(null);
 
@@ -97,7 +97,9 @@ export const HistoryScreen: React.FC = () => {
   // Fetch leads function
   const fetchLeads = useCallback(async () => {
     try {
-      const response = await api.get('/leads/assigned');
+      const response = await api.getAssigned();
+      // console.log(response);
+      
       if (response?.data) {
         setLeads(response.data);
       }
@@ -107,21 +109,66 @@ export const HistoryScreen: React.FC = () => {
   }, []);
 
   // Helper function to find lead by phone number
+  // Alert.alert(phoneNumber);
+
   const findLeadByNumber = useCallback((phoneNumber: string): Lead | null => {
-    if (!phoneNumber || !leads.length) return null;
-    
-    const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
-    
-    return leads.find(lead => {
-      const leadPhone = lead.phone?.replace(/[^0-9]/g, '') || '';
-      const leadMobile = lead.mobile?.replace(/[^0-9]/g, '') || '';
-      const leadAltPhone = lead.alt_phone?.replace(/[^0-9]/g, '') || '';
-      
-      return leadPhone === cleanNumber || 
-             leadMobile === cleanNumber || 
-             leadAltPhone === cleanNumber;
-    }) || null;
-  }, [leads]);
+  if (!phoneNumber) {
+    // console.log('[findLead] No phone number → null');
+    return null;
+  }
+
+  if (!leads.length) {
+    // console.log('[findLead] No leads loaded → null');
+    return null;
+  }
+
+  // 1. Clean input number
+  const inputDigits = phoneNumber.replace(/[^0-9]/g, '');
+  const inputLast10 = inputDigits.slice(-10);
+
+  // console.log(
+  //   `[findLead] Input: "${phoneNumber}" → cleaned: ${inputDigits} → last10: ${inputLast10}`
+  // );
+
+  if (inputLast10.length < 10) {
+    // console.log('[findLead] Input too short (<10 digits) → no match');
+    return null;
+  }
+
+  // 2. Check every lead
+  for (const lead of leads) {
+    const leadNumbers = [lead.phone, lead.mobile, lead.alt_phone].filter(Boolean);
+
+    if (leadNumbers.length === 0) continue;
+
+    // console.log(
+    //   `[findLead] Checking lead: ${lead.firstName} ${lead.lastName} (ID: ${lead._id}) → numbers:`,
+    //   leadNumbers
+    // );
+
+    for (const rawLeadNum of leadNumbers) {
+      const leadDigits = rawLeadNum.replace(/[^0-9]/g, '');
+      const leadLast10 = leadDigits.slice(-10);
+
+      // console.log(
+      //   `  → lead raw: "${rawLeadNum}" → cleaned: ${leadDigits} → last10: ${leadLast10}`
+      // );
+
+      // Match if last 10 digits are exactly the same
+      if (leadLast10 === inputLast10) {
+        // console.log(
+        //   `>>> [MATCH SUCCESS] Lead: ${lead.firstName} ${lead.lastName} ` +
+        //   `| input last10: ${inputLast10} | lead last10: ${leadLast10} | raw lead num: ${rawLeadNum}`
+        // );
+        return lead;
+      }
+    }
+  }
+
+  // console.log(`[findLead] NO MATCH for last10: ${inputLast10}`);
+  return null;
+}, [leads]);
+
 
   // Fetch personal logs
   const fetchPersonalLogs = useCallback(async (force: boolean = false) => {
@@ -154,7 +201,8 @@ export const HistoryScreen: React.FC = () => {
       // Format personal logs and check if they match any lead
       const formattedLogs = fetchedLogs.map(log => {
         const matchedLead = findLeadByNumber(log.phoneNumber);
-        
+        // console.log(log.phoneNumber);
+
         const baseLog = {
           ...log,
           name: log.name || log.phoneNumber || 'Unknown',
@@ -171,7 +219,7 @@ export const HistoryScreen: React.FC = () => {
             disposed: matchedLead.leadStatus === 'disposed'
           };
         }
-        
+
         return baseLog;
       });
 
@@ -275,10 +323,10 @@ export const HistoryScreen: React.FC = () => {
 
       while (fetchedLogs.length === 0 && attempts < MAX_ATTEMPTS && nextOffset < 365) {
         fetchedLogs = await CallLogService.getCallLogsByDay(nextOffset);
-        
+
         const formattedLogs = fetchedLogs.map(log => {
           const matchedLead = findLeadByNumber(log.phoneNumber);
-          
+
           const baseLog = {
             ...log,
             name: log.name || log.phoneNumber || 'Unknown',
@@ -294,10 +342,10 @@ export const HistoryScreen: React.FC = () => {
               disposed: matchedLead.leadStatus === 'disposed'
             };
           }
-          
+
           return baseLog;
         });
-        
+
         if (formattedLogs.length === 0) {
           nextOffset++;
           attempts++;
@@ -481,7 +529,7 @@ export const HistoryScreen: React.FC = () => {
             <Text
               style={[styles.sourceOptionText, source === 'personal' && styles.sourceOptionTextActive]}
             >
-              Personal Logs
+              Call History
             </Text>
           </TouchableOpacity>
 
@@ -492,7 +540,7 @@ export const HistoryScreen: React.FC = () => {
             <Text
               style={[styles.sourceOptionText, source === 'leads' && styles.sourceOptionTextActive]}
             >
-              Lead Logs
+              Lead Call History
             </Text>
           </TouchableOpacity>
         </View>
@@ -596,10 +644,10 @@ const HistoryPage = React.memo(
         let dateLabel = logDate.toDateString();
         if (logDate.toDateString() === today.toDateString()) dateLabel = 'Today';
         else if (logDate.toDateString() === yesterday.toDateString()) dateLabel = 'Yesterday';
-        else dateLabel = logDate.toLocaleDateString('en-US', { 
-          day: 'numeric', 
-          month: 'short', 
-          year: 'numeric' 
+        else dateLabel = logDate.toLocaleDateString('en-US', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric'
         });
 
         if (dateLabel !== currentDate) {
@@ -616,7 +664,7 @@ const HistoryPage = React.memo(
       if (currentGroup.length > 0) {
         groups.push({ title: currentDate, data: currentGroup });
       }
-      
+
       return groups;
     }, [activeLogs, category, searchQuery, simFilter, initialLoading, source]);
 
@@ -641,8 +689,8 @@ const HistoryPage = React.memo(
               No {source === 'leads' ? 'lead' : 'personal'} calls found
             </Text>
             <Text style={styles.emptySubtext}>
-              {source === 'leads' 
-                ? 'Calls from your leads will appear here' 
+              {source === 'leads'
+                ? 'Calls from your leads will appear here'
                 : 'Make or receive calls to see them here'}
             </Text>
           </View>
@@ -656,49 +704,42 @@ const HistoryPage = React.memo(
           data={groupedData}
           keyExtractor={(item) => `${source}-${category}-${item.title}-${item.data.length}`}
           refreshControl={
-            <RefreshControl 
-              refreshing={refreshing} 
-              onRefresh={onRefresh} 
-              colors={[colors.primary]} 
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
               tintColor={colors.primary}
             />
           }
           renderItem={({ item }) => (
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionTitle}>{item.title}</Text>
+              // ... inside HistoryPage → FlatList renderItem
+
+              // Inside HistoryPage → FlatList renderItem
+
               {item.data.map((log) => {
-                const displayLog = source === 'personal' 
+                const displayLog = source === 'personal'
                   ? {
-                      ...log,
-                      name: log.name || log.phoneNumber || 'Unknown',
-                      leadName: log.leadName || log.name || log.phoneNumber || 'Unknown',
-                    }
+                    ...log,
+                    name: log.name || log.phoneNumber || 'Unknown',
+                    leadName: log.leadName || log.name || log.phoneNumber || 'Unknown',
+                  }
                   : log;
-                
-                // Determine which icons to show:
-                // - Add Lead: Show for personal logs that are NOT leads
-                // - Dispose: Show for lead logs OR personal logs that ARE leads
-                const isLead = !!(displayLog.leadId || displayLog.leadData);
-                const showAddLead = source === 'personal' && !isLead;
-                const showDispose = (source === 'leads') || (source === 'personal' && isLead);
-                
+
                 return (
-                  <CallLogItem 
-                    key={displayLog.id} 
-                    item={{
-                      ...displayLog,
-                      // Pass flags to help CallLogItem decide
-                      showAddLead,
-                      showDispose,
-                    }} 
+                  <CallLogItem
+                    key={displayLog.id}
+                    item={displayLog}
                     simCount={simCount}
-                    isLeadLog={showDispose} // This controls the avatar icon
+                    isLeadLog={source === 'leads'}           // ← crucial: only true in leads tab
                     onAddLead={() => onAddLead(displayLog.phoneNumber)}
                     onDispose={(callItem) => {
-                      console.log('📞 Dispose callback received for:', callItem.phoneNumber);
-                      
+                      // your existing navigation logic
+                      // console.log('Dispose callback for:', callItem.phoneNumber);
+
                       if (callItem.leadData) {
-                        navigation.navigate('LeadDetails', { 
+                        navigation.navigate('LeadDetails', {
                           lead: callItem.leadData,
                           fromCall: true,
                           callInfo: {
@@ -710,15 +751,15 @@ const HistoryPage = React.memo(
                           }
                         });
                       } else if (callItem.leadId) {
-                        navigation.navigate('LeadDetails', { 
+                        navigation.navigate('LeadDetails', {
                           leadId: callItem.leadId,
                           fromCall: true,
                           phoneNumber: callItem.phoneNumber
                         });
                       } else {
-                        navigation.navigate('LeadDetails', { 
+                        navigation.navigate('LeadDetails', {
                           phoneNumber: callItem.phoneNumber,
-                          fromCall: true 
+                          fromCall: true
                         });
                       }
                     }}
@@ -804,7 +845,7 @@ const styles = StyleSheet.create({
     color: colors.black,
   },
   allSimsIcon: {
-    width: 24, 
+    width: 24,
     height: 24,
     position: 'relative',
     justifyContent: 'center',
@@ -887,11 +928,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   emptySubtext: {
-    marginTop: 8, 
+    marginTop: 8,
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
-  }, 
+  },
 });
 
 export default HistoryScreen;

@@ -133,18 +133,30 @@ export const api = {
             console.error('Profile Fetch Error:', error.response?.data || error.message);
             throw error;
         }
-    }, 
+    },
 
-   getCallLogs: async () => {
-    try {
-        const response = await apiClient.get('/calls/call-logs');
-        // ✅ Correct ways to log objects:
-        // console.log('backen:', response.data);  // Comma separates values
-       
-        return response.data; 
-    } catch (error: any) {
-        console.error('Profile Fetch Error:', error.response?.data || error.message);
-        throw error;
-    } 
-}   
+    getCallLogs: async () => {
+        try {
+            const response = await apiClient.get('/calls/call-logs');
+            // ✅ Correct ways to log objects:
+            // console.log('backen:', response.data);  // Comma separates values
+
+            return response.data;
+        } catch (error: any) {
+            console.error('Profile Fetch Error:', error.response?.data || error.message);
+            throw error;
+        }
+    },
+    getAssigned: async () => {
+        try {
+            const response = await apiClient.get('/leads/assigned');
+            // ✅ Correct ways to log objects:
+            // console.log('backen:', response.data);  // Comma separates values
+
+            return response.data;
+        } catch (error: any) {
+            console.error('Profile Fetch Error:', error.response?.data || error.message);
+            throw error;
+        }
+    }
 };
