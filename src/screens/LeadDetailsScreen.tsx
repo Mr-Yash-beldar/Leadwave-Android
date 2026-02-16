@@ -11,7 +11,8 @@ import {
   TextInput,
   PermissionsAndroid,
   NativeModules,
-  NativeEventEmitter
+  NativeEventEmitter,
+  Linking
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -105,11 +106,18 @@ export const LeadDetailsScreen = () => {
     // 2. Check Permissions
     const hasPermission = await checkPermissions();
     if (hasPermission) {
-      PhoneModule.startCallListener(); // Ensure listener is active
+      // PhoneModule.startCallListener(); // Ensure listener is active
       PhoneModule.makeCall(lead.phone || lead.number);
-      navigation.navigate('CallScreen', { number: lead.phone || lead.number, name: getLeadName() });
+      // navigation.navigate('CallScreen', { number: lead.phone || lead.number, name: getLeadName() });
     } else {
-      Alert.alert("Permission Error", "Call permission is required");
+      Alert.alert(
+        "Permission Required",
+        "Call permission is required to make calls. Please enable it in settings.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() }
+        ]
+      );
     }
   };
 
@@ -279,7 +287,14 @@ export const LeadDetailsScreen = () => {
           </View>
           <DetailRow label="Lead Source" value={lead.leadSource || '-'} />
           <DetailRow label="Follow-Up Date" value={lead.next_followup_date ? new Date(lead.next_followup_date).toLocaleDateString() : (lead.followUpDate || '-')} />
-          <DetailRow label="Assigned To" value={lead.assigned_to || lead.assignedUser || '-'} />
+          <DetailRow
+            label="Assigned To"
+            value={
+              (typeof lead.assigned_to === 'object' && lead.assigned_to !== null ? (lead.assigned_to as any).name || (lead.assigned_to as any).username : lead.assigned_to) ||
+              (typeof lead.assignedUser === 'object' && lead.assignedUser !== null ? (lead.assignedUser as any).name || (lead.assignedUser as any).username : lead.assignedUser) ||
+              '-'
+            }
+          />
           {lead.stage && <DetailRow label="Stage" value={lead.stage} />}
           {lead.tag && <DetailRow label="Tag" value={lead.tag} />}
           {lead.dealAmount && <DetailRow label="Deal Amount" value={lead.dealAmount} />}
@@ -557,10 +572,10 @@ export const LeadDetailsScreen = () => {
                   })()}
 
                   {/* Call History Section (As requested specifically for "call histry for that particular lead") */}
-                  <View style={{ marginTop: 20, marginBottom: 10 }}>
+                  {/* <View style={{ marginTop: 20, marginBottom: 10 }}>
                     <Text style={{ fontSize: 16, fontWeight: 'bold', color: colors.text, marginBottom: 10 }}>Recent Calls</Text>
                     <CallHistoryList lead={lead} />
-                  </View>
+                  </View> */}
                 </View>
               )}
             </ScrollView>
@@ -576,12 +591,14 @@ export const LeadDetailsScreen = () => {
       </View>
 
       {/* Footer Call Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.footerCallBtn} onPress={handleCallNow}>
-          <Text style={styles.footerCallText}>Call Now</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+      {activeTab != 'DISPOSE_LEAD' && (
+        < View style={styles.footer}>
+          <TouchableOpacity style={styles.footerCallBtn} onPress={handleCallNow}>
+            <Text style={styles.footerCallText}>Call Now</Text>
+          </TouchableOpacity>
+        </View>)}
+
+    </SafeAreaView >
   );
 };
 
@@ -591,17 +608,23 @@ const CallHistoryList = ({ lead }: { lead: Lead }) => {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Use ID dependency to prevent infinite reloads if lead object reference changes
   useEffect(() => {
     loadLogs();
-  }, [lead]);
+  }, [lead._id, lead.id]);
 
   const loadLogs = async () => {
     try {
+      // Don't set loading true if we already have logs to avoid flash, or keep it if UX needs it.
+      // Better to check if we are already loading or if id changed.
+      // For now, let's keep it simple but rely on ID stability.
       setLoading(true);
       let remoteLogs: any[] = [];
       if (lead._id || lead.id) {
         remoteLogs = await CallLogService.getRemoteCallLogs(lead._id || lead.id || '');
       }
+      // Check if component is mounted or if result is valid before setting state? 
+      // React handles unmount updates with warning, but safe here.
       setLogs(remoteLogs.sort((a: any, b: any) => b.timestamp - a.timestamp));
     } catch (e) {
       console.error(e);

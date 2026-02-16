@@ -12,7 +12,7 @@ export interface Lead {
     leadSource?: string;
     leadStatus?: string;
     status?: string; // internal mapping
-    assigned_to?: string;
+    assigned_to?: string | { name?: string; username?: string };
     assigned_by?: string;
     companyId?: string;
     expectedValue?: number | string | null;
@@ -28,7 +28,7 @@ export interface Lead {
     stage?: string;
     tag?: string;
     dealAmount?: string;
-    assignedUser?: string;
+    assignedUser?: string | { name?: string; username?: string };
     campaignName?: string;
     campaign?: {
         name: string;

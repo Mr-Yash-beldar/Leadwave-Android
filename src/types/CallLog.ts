@@ -3,8 +3,6 @@ export enum CallType {
     Outgoing = 'OUTGOING',
     Missed = 'MISSED',
     Rejected = 'REJECTED',
-    Blocked = 'BLOCKED',
-    Voicemail = 'VOICEMAIL',
     Unknown = 'UNKNOWN',
 }
 
@@ -19,4 +17,14 @@ export interface CallLog {
     timestamp: number;
     simSlot?: number;
     recordingUrl?: string;
+
+    // Lead matching fields
+    leadName?: string;
+    leadId?: string;
+    leadData?: import('./Lead').Lead;
+    disposed?: boolean;
+    leadEmail?: string;
+    leadMobile?: string;
+    notes?: string;
+    callStatus?: string;
 }

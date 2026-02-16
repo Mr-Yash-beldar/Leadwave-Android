@@ -49,7 +49,7 @@ export const CampaignLeadsScreen = () => {
             // Navigate to CallScreen with the first lead?
             // Or maybe a specific "Campaign Call Mode"
             // For now, let's just log it or pick the first one.
-            console.log("Starting call with first lead", leads[0]);
+            // console.log("Starting call with first lead", leads[0]);
             // navigation.navigate('CallScreen', { lead: leads[0] }); 
             // Logic to start auto-dialing might be complex. 
             // I'll just select the first lead for now.
@@ -118,11 +118,11 @@ export const CampaignLeadsScreen = () => {
                 }
             />
 
-            <View style={styles.bottomContainer}>
+            {/* <View style={styles.bottomContainer}>
                 <TouchableOpacity style={styles.callButton} onPress={handleStartCalling}>
                     <Text style={styles.callButtonText}>Start Calling</Text>
                 </TouchableOpacity>
-            </View>
+            </View> */}
         </View>
     );
 };

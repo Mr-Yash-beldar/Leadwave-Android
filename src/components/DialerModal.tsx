@@ -168,11 +168,11 @@ export const DialerModal: React.FC<DialerModalProps> = ({ isVisible, onClose, on
         PhoneModule.makeCall(number);
 
         // 3. Navigate to CallScreen
-        onClose(); // Close modal first?
-        navigation.navigate('CallScreen', {
-          number: number,
-          name: 'Unknown' // Or try to find if we have a name from checkLead?
-        });
+        // onClose(); // Close modal first?
+        // navigation.navigate('lead', {
+        //   number: number,
+        //   name: 'Unknown' // Or try to find if we have a name from checkLead?
+        // });
       }
     }
   };

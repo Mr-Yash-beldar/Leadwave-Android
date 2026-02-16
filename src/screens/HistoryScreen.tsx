@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   NativeModules
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { CallLogService } from '../services/CallLogService';
@@ -99,9 +100,12 @@ export const HistoryScreen: React.FC = () => {
     try {
       const response = await api.getAssigned();
       // console.log(response);
-      
+
       if (response?.data) {
         setLeads(response.data);
+        AsyncStorage.setItem('cached_leads', JSON.stringify(response.data)).catch(err =>
+          console.error('Failed to cache leads:', err)
+        );
       }
     } catch (error) {
       console.error('Error fetching leads:', error);
@@ -112,62 +116,62 @@ export const HistoryScreen: React.FC = () => {
   // Alert.alert(phoneNumber);
 
   const findLeadByNumber = useCallback((phoneNumber: string): Lead | null => {
-  if (!phoneNumber) {
-    // console.log('[findLead] No phone number → null');
-    return null;
-  }
+    if (!phoneNumber) {
+      // console.log('[findLead] No phone number → null');
+      return null;
+    }
 
-  if (!leads.length) {
-    // console.log('[findLead] No leads loaded → null');
-    return null;
-  }
+    if (!leads.length) {
+      // console.log('[findLead] No leads loaded → null');
+      return null;
+    }
 
-  // 1. Clean input number
-  const inputDigits = phoneNumber.replace(/[^0-9]/g, '');
-  const inputLast10 = inputDigits.slice(-10);
-
-  // console.log(
-  //   `[findLead] Input: "${phoneNumber}" → cleaned: ${inputDigits} → last10: ${inputLast10}`
-  // );
-
-  if (inputLast10.length < 10) {
-    // console.log('[findLead] Input too short (<10 digits) → no match');
-    return null;
-  }
-
-  // 2. Check every lead
-  for (const lead of leads) {
-    const leadNumbers = [lead.phone, lead.mobile, lead.alt_phone].filter(Boolean);
-
-    if (leadNumbers.length === 0) continue;
+    // 1. Clean input number
+    const inputDigits = phoneNumber.replace(/[^0-9]/g, '');
+    const inputLast10 = inputDigits.slice(-10);
 
     // console.log(
-    //   `[findLead] Checking lead: ${lead.firstName} ${lead.lastName} (ID: ${lead._id}) → numbers:`,
-    //   leadNumbers
+    //   `[findLead] Input: "${phoneNumber}" → cleaned: ${inputDigits} → last10: ${inputLast10}`
     // );
 
-    for (const rawLeadNum of leadNumbers) {
-      const leadDigits = rawLeadNum.replace(/[^0-9]/g, '');
-      const leadLast10 = leadDigits.slice(-10);
+    if (inputLast10.length < 10) {
+      // console.log('[findLead] Input too short (<10 digits) → no match');
+      return null;
+    }
+
+    // 2. Check every lead
+    for (const lead of leads) {
+      const leadNumbers = [lead.phone, lead.mobile, lead.alt_phone].filter((n): n is string => !!n);
+
+      if (leadNumbers.length === 0) continue;
 
       // console.log(
-      //   `  → lead raw: "${rawLeadNum}" → cleaned: ${leadDigits} → last10: ${leadLast10}`
+      //   `[findLead] Checking lead: ${lead.firstName} ${lead.lastName} (ID: ${lead._id}) → numbers:`,
+      //   leadNumbers
       // );
 
-      // Match if last 10 digits are exactly the same
-      if (leadLast10 === inputLast10) {
+      for (const rawLeadNum of leadNumbers) {
+        const leadDigits = rawLeadNum.replace(/[^0-9]/g, '');
+        const leadLast10 = leadDigits.slice(-10);
+
         // console.log(
-        //   `>>> [MATCH SUCCESS] Lead: ${lead.firstName} ${lead.lastName} ` +
-        //   `| input last10: ${inputLast10} | lead last10: ${leadLast10} | raw lead num: ${rawLeadNum}`
+        //   `  → lead raw: "${rawLeadNum}" → cleaned: ${leadDigits} → last10: ${leadLast10}`
         // );
-        return lead;
+
+        // Match if last 10 digits are exactly the same
+        if (leadLast10 === inputLast10) {
+          // console.log(
+          //   `>>> [MATCH SUCCESS] Lead: ${lead.firstName} ${lead.lastName} ` +
+          //   `| input last10: ${inputLast10} | lead last10: ${leadLast10} | raw lead num: ${rawLeadNum}`
+          // );
+          return lead;
+        }
       }
     }
-  }
 
-  // console.log(`[findLead] NO MATCH for last10: ${inputLast10}`);
-  return null;
-}, [leads]);
+    // console.log(`[findLead] NO MATCH for last10: ${inputLast10}`);
+    return null;
+  }, [leads]);
 
 
   // Fetch personal logs
@@ -295,7 +299,7 @@ export const HistoryScreen: React.FC = () => {
             leadId: lead.id,
             leadData: lead
           };
-        }).sort((a, b) => b.timestamp - a.timestamp);
+        }).sort((a: any, b: any) => b.timestamp - a.timestamp);
 
         setLeadLogs(formatted);
       } else {
@@ -431,18 +435,74 @@ export const HistoryScreen: React.FC = () => {
   ), [logs, leadLogs, searchQuery, simCount, simFilter, loadMore, loadingMore, initialLoading, handleRefresh, refreshing, openAddLead, source, navigation, leads]);
 
   // ============ ALL useEffect HOOKS ============
-  // Initial data load
+
+  // Load cached leads on mount
   useEffect(() => {
-    const loadInitialData = async () => {
-      await fetchLeads();
-      if (source === 'personal') {
-        await fetchPersonalLogs();
-      } else {
-        await fetchLeadLogs(true);
+    const loadCachedLeads = async () => {
+      try {
+        const cached = await AsyncStorage.getItem('cached_leads');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setLeads(parsed);
+          }
+        }
+      } catch (e) {
+        console.error('Error loading cached leads', e);
       }
     };
-    loadInitialData();
-  }, [source, fetchLeads, fetchPersonalLogs, fetchLeadLogs]);
+    loadCachedLeads();
+  }, []);
+
+  // Update logs when leads change (Reactive Update)
+  useEffect(() => {
+    if (leads.length === 0) return;
+
+    setLogs(prevLogs => {
+      let hasUpdates = false;
+      const updatedLogs = prevLogs.map(log => {
+        // If already matched, we can skip or re-match. 
+        // Re-matching ensures that if a lead name changed, it updates.
+        // But for performance, if we have leadId, maybe we skip? 
+        // The user wants "backend names will be seen there", implying they were missing.
+        // So main priority is filling missing ones.
+        if (log.leadId) return log;
+
+        const matchedLead = findLeadByNumber(log.phoneNumber);
+        if (matchedLead) {
+          hasUpdates = true;
+          return {
+            ...log,
+            leadName: `${matchedLead.firstName} ${matchedLead.lastName}`.trim(),
+            leadId: matchedLead._id || matchedLead.id,
+            leadData: matchedLead,
+            disposed: matchedLead.leadStatus === 'disposed'
+          };
+        }
+        return log;
+      });
+      return hasUpdates ? updatedLogs : prevLogs;
+    });
+  }, [leads, findLeadByNumber]);
+
+  // Initial data load - Leads
+  useEffect(() => {
+    fetchLeads();
+  }, [fetchLeads]);
+
+  // Initial data load - Personal Logs
+  useEffect(() => {
+    if (source === 'personal') {
+      fetchPersonalLogs();
+    }
+  }, [source, fetchPersonalLogs]);
+
+  // Initial data load - Lead Logs
+  useEffect(() => {
+    if (source === 'leads') {
+      fetchLeadLogs(true);
+    }
+  }, [source, fetchLeadLogs]);
 
   // App state change listener
   useEffect(() => {

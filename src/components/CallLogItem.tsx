@@ -75,15 +75,15 @@ interface CallLogItemProps {
 }
 
 // Extracted modal component to prevent re-renders of main component
-const AddLeadModal = memo(({ 
-  visible, 
-  onClose, 
-  phoneNumber, 
-  onSubmit 
-}: { 
-  visible: boolean; 
-  onClose: () => void; 
-  phoneNumber: string; 
+const AddLeadModal = memo(({
+  visible,
+  onClose,
+  phoneNumber,
+  onSubmit
+}: {
+  visible: boolean;
+  onClose: () => void;
+  phoneNumber: string;
   onSubmit: (data: { firstName: string; lastName: string; campaign: string }) => Promise<void>;
 }) => {
   const [firstName, setFirstName] = useState('');
@@ -241,30 +241,30 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
 
   // Memoized values to prevent recalculations
   const isMyLead = useMemo(() => !!(item.leadId || item.leadData), [item.leadId, item.leadData]);
-  
-  const showAddLeadButton = useMemo(() => 
+
+  const showAddLeadButton = useMemo(() =>
     !isLeadLog && !isMyLead && !item.disposed,
     [isLeadLog, isMyLead, item.disposed]
   );
 
-  const showDisposeButton = useMemo(() => 
+  const showDisposeButton = useMemo(() =>
     !item.disposed && (isLeadLog || isMyLead),
     [item.disposed, isLeadLog, isMyLead]
   );
 
-  const displayName = useMemo(() => 
+  const displayName = useMemo(() =>
     isMyLead
       ? (item.leadName || `${item.leadData?.firstName || ''} ${item.leadData?.lastName || ''}`.trim() || 'Unknown Lead')
       : (item.name || item.phoneNumber || 'Unknown'),
     [isMyLead, item.leadName, item.leadData, item.name, item.phoneNumber]
   );
 
-  const displayNumber = useMemo(() => 
+  const displayNumber = useMemo(() =>
     item.phoneNumber || item.leadMobile || 'No number',
     [item.phoneNumber, item.leadMobile]
   );
 
-  const { color, Icon: TypeIcon } = useMemo(() => 
+  const { color, Icon: TypeIcon } = useMemo(() =>
     getCallTypeInfo(item.type),
     [item.type]
   );
@@ -399,7 +399,7 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
             <Text style={styles.name} numberOfLines={1}>
               {displayName}
             </Text>
-            
+
             <Text style={styles.number}>{displayNumber}</Text>
 
             {isMyLead && (
@@ -419,12 +419,12 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
               </View>
             )}
 
-            {item.disposed && (
+            {/* {item.disposed && (
               <View style={styles.disposedTag}>
                 <CheckCircle size={14} color="#22c55e" />
                 <Text style={styles.disposedText}>Disposed</Text>
               </View>
-            )}
+            )} */}
           </View>
 
           <View style={styles.meta}>
@@ -453,11 +453,11 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
             </TouchableOpacity>
           )}
 
-          {showDisposeButton && (
+          {/* {showDisposeButton && (
             <TouchableOpacity style={styles.actionButton} onPress={handleDisposePress}>
               <Trash2 size={20} color={colors.error || '#ef4444'} />
             </TouchableOpacity>
-          )}
+          )} */}
 
           <TouchableOpacity style={styles.actionButton} onPress={handleCopy}>
             <Copy size={20} color="#9E9E9E" />
