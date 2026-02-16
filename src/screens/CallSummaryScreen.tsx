@@ -31,7 +31,7 @@ export const CallSummaryScreen = () => {
 
             // 1. Log the call if callLog is present
             if (callLog) {
-                 const callPayload = {
+                const callPayload = {
                     leadId: leadId,
                     callTime: new Date(callLog.timestamp).toISOString(),
                     durationSeconds: callLog.duration,
@@ -39,9 +39,9 @@ export const CallSummaryScreen = () => {
                     callType: callLog.type ? callLog.type.toLowerCase() : 'outgoing',
                     recordingLink: callLog.recordingPath || null,
                     notes: `Call Summary: ${formData.status}`
-                 };
-                 console.log("Logging specific call:", callPayload);
-                 await LeadsService.logCall(callPayload);
+                };
+                console.log("Logging specific call:", callPayload);
+                await LeadsService.logCall(callPayload);
             }
 
             // 2. Submit Lead Update
@@ -50,19 +50,24 @@ export const CallSummaryScreen = () => {
             await LeadsService.updateLeadBySalesperson(payload);
 
             Alert.alert("Success", "Call log stored and lead updated successfully", [
-                { 
-                    text: "OK", 
+                {
+                    text: "OK",
                     onPress: () => {
                         // Navigate to 'Leads' tab within 'MainTabs' stack
                         navigation.navigate('MainTabs', { screen: 'Leads' });
                         // fallback if MainTabs isn't found
                         // navigation.navigate('Leads'); 
                     }
-                } 
+                }
             ]);
-        } catch (error) {
-            console.error("Submission Error:", error);
-            Alert.alert("Error", "Failed to update lead details.");
+        } catch (error: any) {
+            // console.error("Submission Error:", error);
+            // if status is 409 then show error message we cant desponse same lead     
+            if (error.response && error.response.status === 409) {
+                Alert.alert("Warning", "We can't respond to the same lead");
+            } else {
+                Alert.alert("Error", error.message);
+            };
         } finally {
             setSubmitting(false);
         }
@@ -89,7 +94,7 @@ export const CallSummaryScreen = () => {
                 <View style={styles.card}>
                     <Text style={styles.sectionTitle}>Call Details</Text>
                     <View style={styles.divider} />
-                    
+
                     <View style={styles.row}>
                         <View style={styles.iconBox}><Clock size={20} color={colors.primary} /></View>
                         <View style={styles.infoBox}>
@@ -109,8 +114,8 @@ export const CallSummaryScreen = () => {
                             </Text>
                         </View>
                     </View>
-                    
-                     {callLog?.recordingPath && (
+
+                    {callLog?.recordingPath && (
                         <View style={styles.row}>
                             <View style={styles.iconBox}><FileText size={20} color={colors.primary} /></View>
                             <View style={styles.infoBox}>
@@ -132,7 +137,7 @@ export const CallSummaryScreen = () => {
                     <DetailItem label="Status" value={formData.status.toUpperCase()} />
                     <DetailItem label="Follow Up" value={new Date(formData.followUpDate).toDateString()} />
                     <DetailItem label="Contacted" value={formData.connected ? "Yes" : "No"} />
-                    
+
                     {formData.connected && (
                         <>
                             <DetailItem label="Expected Value" value={formData.expectedValue || '-'} />
@@ -150,8 +155,8 @@ export const CallSummaryScreen = () => {
                     {submitting ? (
                         <Text style={styles.submitText}>Submitting...</Text>
                     ) : (
-                        <View style={{flexDirection:'row', alignItems:'center'}}>
-                            <CheckCircle2 size={20} color={colors.black} style={{marginRight: 8}} />
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <CheckCircle2 size={20} color={colors.black} style={{ marginRight: 8 }} />
                             <Text style={styles.submitText}>Confirm & Submit</Text>
                         </View>
                     )}

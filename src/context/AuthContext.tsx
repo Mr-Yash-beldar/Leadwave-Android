@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { jwtDecode } from 'jwt-decode';
 import { api } from '../services/api';
+import { setLogoutHandler } from '../services/apiClient';
 
 interface User {
   _id: string;
@@ -15,101 +16,147 @@ interface User {
 interface AuthContextData {
   user: User | null;
   loading: boolean;
+  isFirstLaunch: boolean;
+  isServerUp: boolean;
   login: (creds: any) => Promise<void>;
   logout: (reason?: string) => Promise<void>;
+  completeOnboarding: () => Promise<void>;
+  refreshProfile: () => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 
-const SESSION_TIMEOUT = 15 * 60 * 1000; // 15 minutes in milliseconds
-
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isFirstLaunch, setIsFirstLaunch] = useState(false);
+  const [isServerUp, setIsServerUp] = useState(true);
+
 
   const logout = useCallback(async (reason?: string) => {
-    await AsyncStorage.multiRemove(['user', 'token', 'refreshToken', 'loginTime']);
-    setUser(null);
-    if (reason === 'session_expired') {
-      Alert.alert('Session Expired', 'Please login again.');
+    try {
+      await AsyncStorage.multiRemove(['user', 'token', 'refreshToken']);
+      setUser(null);
+      if (reason === 'session_expired') {
+        // Must use setTimeout or alert might be swallowed if navigating immediately
+        setTimeout(() => {
+          Alert.alert('Session Expired', 'Please login again.');
+        }, 500);
+      }
+    } catch (e) {
+      console.error('Logout error:', e);
     }
   }, []);
 
-  const checkSession = useCallback(async () => {
-    try {
-      const loginTime = await AsyncStorage.getItem('loginTime');
-      if (loginTime) {
-        const timeElapsed = Date.now() - parseInt(loginTime, 10);
-        if (timeElapsed >= SESSION_TIMEOUT) {
-          await logout('session_expired');
-          return true;
-        }
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
+  // Register logout handler for API interceptor
+  useEffect(() => {
+    setLogoutHandler(() => logout('session_expired'));
   }, [logout]);
+
+  const refreshProfile = useCallback(async () => {
+    try {
+      const profileData = await api.getProfile();
+      if (profileData && profileData.data) {
+        const u = profileData.data;
+        const updatedUser: User = {
+          _id: u._id,
+          role: u.role,
+          name: u.name,
+          email: u.email,
+          number: u.number || u.phone
+        };
+        setUser(updatedUser);
+        await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+        return updatedUser;
+      }
+    } catch (error) {
+      console.error('Failed to refresh profile:', error);
+    }
+    return null;
+  }, []);
+
+  const completeOnboarding = async () => {
+    await AsyncStorage.setItem('alreadyLaunched', 'true');
+    setIsFirstLaunch(false);
+  };
 
   useEffect(() => {
     const initAuth = async () => {
-      const isExpired = await checkSession();
-      if (!isExpired) {
+      // Building connection...
+      await new Promise(resolve => setTimeout(() => resolve(true), 1500));
+
+      // Check Server Health
+      const serverUp = await api.checkHealth();
+      setIsServerUp(serverUp);
+
+      if (!serverUp) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const alreadyLaunched = await AsyncStorage.getItem('alreadyLaunched');
+        setIsFirstLaunch(alreadyLaunched === null);
+
         const storedUser = await AsyncStorage.getItem('user');
         if (storedUser) {
           setUser(JSON.parse(storedUser));
+          // Refresh profile in background if we have a user
+          refreshProfile();
         }
+      } catch (e) {
+        console.error("Auth init error:", e);
       }
       setLoading(false);
     };
 
     initAuth();
-
-    const interval = setInterval(() => {
-        checkSession();
-    }, 60000);
-
-    return () => clearInterval(interval);
-  }, [checkSession]);
+  }, [refreshProfile]);
 
   const login = async (creds: { email: string; password: string }) => {
     const response = await api.login(creds);
-    
-    // Response check: { success, accessToken, refreshToken }
+
     if (response && response.success && response.accessToken) {
       const { accessToken, refreshToken } = response;
-      
-      // Decode token to get role and id
-      // accessToken might have 'Bearer ' prefix, jwt-decode wants just the token
+
       const tokenOnly = accessToken.startsWith('Bearer ') ? accessToken.split(' ')[1] : accessToken;
       const decoded: any = jwtDecode(tokenOnly);
-      
+
       if (decoded.role !== 'salesperson') {
-          throw new Error('Access Denied: Only salespeople can access this application.');
+        throw new Error('Access Denied: Only salespeople can access this application.');
       }
 
       const userData: User = {
         _id: decoded.id,
         role: decoded.role,
-        email: creds.email // Store email from creds since it's not in token
+        email: creds.email
       };
-
-      const loginTime = Date.now().toString();
 
       setUser(userData);
       await AsyncStorage.multiSet([
         ['user', JSON.stringify(userData)],
-        ['token', accessToken], // We store it with Bearer if provided
-        ['refreshToken', refreshToken],
-        ['loginTime', loginTime]
+        ['token', accessToken],
+        ['refreshToken', refreshToken]
       ]);
+
+      // Fetch full profile details immediately after login
+      await refreshProfile();
     } else {
       throw new Error(response?.message || 'Login failed: Invalid response from server');
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      isFirstLaunch,
+      isServerUp,
+      login,
+      logout,
+      completeOnboarding,
+      refreshProfile
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -6,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
@@ -14,8 +15,8 @@ import { useAuth } from '../../context/AuthContext';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react-native';
 
 export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const [email, setEmail] = useState('yashodip@gmail.com');
-  const [password, setPassword] = useState('pass@1234');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -37,7 +38,7 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       if (e.message.includes('Access Denied')) title = 'Access Denied';
       if (e.message.includes('credentials')) title = 'Invalid Credentials';
       if (e.message.includes('Connection')) title = 'Server Error';
-      
+
       Alert.alert(title, e.message);
     } finally {
       setLoading(false);
@@ -46,11 +47,16 @@ export const LoginScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      {/* <View style={styles.header}>
         <Text style={styles.headerTitle}>Login</Text>
-      </View>
+      </View> */}
 
       <View style={styles.content}>
+        <Image
+          source={require('../../assets/logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
         <Text style={styles.title}>Welcome Back</Text>
 
         <TextInput
@@ -126,6 +132,12 @@ const styles = StyleSheet.create({
     color: colors.primary,
     marginBottom: 32,
     alignSelf: 'center',
+  },
+  logo: {
+    width: 200,
+    height: 100,
+    alignSelf: 'center',
+    marginBottom: 20,
   },
   input: {
     backgroundColor: colors.white,

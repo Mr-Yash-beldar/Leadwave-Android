@@ -3,16 +3,22 @@ import apiClient from './apiClient';
 import { Lead } from '../types/Lead';
 
 export const LeadsService = {
-    getAssignedLeads: async (): Promise<Lead[]> => {
+    getAssignedLeads: async (page: number = 1, limit: number = 100): Promise<Lead[]> => {
         try {
-            const response = await apiClient.get<{ success: boolean; data: Lead[] }>('/leads/assigned');
+            // console.log('Fetching assigned leads from /leads/assigned');
+            const response = await apiClient.get<{ success: boolean; data: Lead[]; meta?: any }>('/leads/assigned', {
+                params: { page, limit }
+            });
+            console.log('Response received:', response.data);
             if (response.data.success) {
                 return response.data.data;
             }
             return [];
-        } catch (error) {
-            console.error('Error fetching assigned leads:', error);
-            throw error;
+        } catch (error: any) {
+            console.error('Error fetching assigned leads:', error.message);
+
+            // Return empty array instead of throwing to prevent app crash
+            return [];
         }
     },
 

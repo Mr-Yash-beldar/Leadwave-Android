@@ -4,7 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { HistoryScreen } from '../screens/HistoryScreen';
 import { HomeScreen } from '../screens/HomeScreen';
-import { ContactScreen } from '../screens/ContactScreen';
+import { CampaignsScreen } from '../screens/CampaignsScreen';
 import { LeadsScreen } from '../screens/LeadsScreen';
 import { CallAnalyticsScreen } from '../screens/CallAnalyticsScreen';
 import { ContactAnalyticsScreen } from '../screens/ContactAnalyticsScreen';
@@ -12,8 +12,9 @@ import { LeadDetailsScreen } from '../screens/LeadDetailsScreen';
 import { LeadDisposeScreen } from '../screens/LeadDisposeScreen';
 import { CallSummaryScreen } from '../screens/CallSummaryScreen';
 import { ServerDownScreen } from '../screens/ServerDownScreen';
+import { SessionExpiredScreen } from '../screens/SessionExpiredScreen';
 import { colors } from '../theme/colors';
-import { Phone, Users, BarChart2, Menu, UserPlus } from 'lucide-react-native';
+import { Phone, Users, BarChart2, Menu, UserPlus, Megaphone } from 'lucide-react-native';
 
 import { PrivacyScreen } from '../screens/Onboarding/PrivacyScreen';
 import { ConnectSimScreen } from '../screens/Onboarding/ConnectSimScreen';
@@ -28,9 +29,10 @@ import { LoginScreen } from '../screens/Auth/LoginScreen';
 import { OtpVerificationScreen } from '../screens/Auth/OtpVerificationScreen';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { View, Text, TouchableOpacity, Alert, BackHandler } from 'react-native';
-import { SyncProvider } from '../context/SyncContext';
 import { useAutoSync } from '../hooks/useAutoSync';
 import { navigationRef } from '../services/apiClient';
+import { CallScreen } from '../screens/CallScreen';
+import { OnboardingScreen } from '../screens/Onboarding/OnboardingScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -41,40 +43,37 @@ const AnalyticsScreen = () => <HomeScreen title="Analytics" />;
 const MoreScreen = () => {
   const { logout, user } = useAuth();
   const navigation = useNavigation<any>();
-  
+
   const handleLogout = async () => {
-      await logout();
-      // Navigate to Login Stack or reset
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Login' }],
-      });
+    await logout();
+    // The conditional stack in RootContent will automatically switch to Login
+    // because user state becomes null. navigation.reset is not needed here.
   };
-  
+
   const handleExport = () => {
-      // Logic to export logs
-      // For now show Alert
-      Alert.alert("Export", "Call records exported to Downloads/Callyzer_Export.csv");
+    // Logic to export logs
+    // For now show Alert
+    Alert.alert("Export", "Call records exported to Downloads/Callyzer_Export.csv");
   };
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FAFAFA', padding: 20 }}>
-       <View style={{ marginBottom: 30, alignItems: 'center' }}>
-         <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginBottom: 10 }}>
-            <Text style={{ fontSize: 32, fontWeight: 'bold' }}>{(user?.name || 'U').charAt(0)}</Text>
-         </View>
-         <Text style={{ fontSize: 20, fontWeight: 'bold' }}>{user?.name}</Text>
-         <Text style={{ color: colors.textSecondary }}>{user?.number}</Text>
-       </View>
+      <View style={{ marginBottom: 30, alignItems: 'center' }}>
+        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginBottom: 10 }}>
+          <Text style={{ fontSize: 32, fontWeight: 'bold' }}>{(user?.name || 'U').charAt(0)}</Text>
+        </View>
+        <Text style={{ fontSize: 20, fontWeight: 'bold' }}>{user?.name}</Text>
+        <Text style={{ color: colors.textSecondary }}>{user?.number}</Text>
+      </View>
 
-       <TouchableOpacity onPress={handleExport} style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: 'white', borderRadius: 8, marginBottom: 16 }}>
-          <Text style={{ flex: 1, fontSize: 16 }}>Export Call Records</Text>
-          <Menu size={20} color={colors.textSecondary} />
-       </TouchableOpacity>
+      <TouchableOpacity onPress={handleExport} style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: 'white', borderRadius: 8, marginBottom: 16 }}>
+        <Text style={{ flex: 1, fontSize: 16 }}>Export Call Records</Text>
+        <Menu size={20} color={colors.textSecondary} />
+      </TouchableOpacity>
 
-       <TouchableOpacity onPress={handleLogout} style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#FFEBEE', borderRadius: 8 }}>
-          <Text style={{ flex: 1, fontSize: 16, color: colors.error }}>Logout</Text>
-       </TouchableOpacity>
+      <TouchableOpacity onPress={handleLogout} style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#FFEBEE', borderRadius: 8 }}>
+        <Text style={{ flex: 1, fontSize: 16, color: colors.error }}>Logout</Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -92,42 +91,43 @@ const TabNavigator = () => {
         tabBarStyle: { height: 60, paddingBottom: 8, paddingTop: 8 },
       }}
     >
-      <Tab.Screen 
-        name="Call History" 
-        component={HistoryScreen} 
+      <Tab.Screen
+        name="Call History"
+        component={HistoryScreen}
         options={{
           headerShown: false,
           tabBarIcon: ({ color, size }) => <Phone color={color} size={size} />
         }}
       />
-      <Tab.Screen 
-        name="Leads" 
-        component={LeadsScreen} 
+      <Tab.Screen
+        name="Leads"
+        component={LeadsScreen}
         options={{
           headerShown: false,
           tabBarIcon: ({ color, size }) => <UserPlus color={color} size={size} />
         }}
       />
-      <Tab.Screen 
-        name="Analytics" 
+      
+      <Tab.Screen
+        name="Analytics"
         component={CallAnalyticsScreen}
         options={{
           headerShown: false,
           tabBarIcon: ({ color, size }) => <BarChart2 color={color} size={size} />
         }}
       />
- 
-      <Tab.Screen 
-        name="Contacts" 
-        component={ContactScreen}
+
+      <Tab.Screen
+        name="Campaigns"
+        component={CampaignsScreen}
         options={{
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Users color={color} size={size} />
+          tabBarIcon: ({ color, size }) => <Megaphone color={color} size={size} />
         }}
       />
-       
-       <Tab.Screen 
-        name="More" 
+
+      <Tab.Screen
+        name="More"
         component={MoreScreen}
         options={{
           tabBarIcon: ({ color, size }) => <Menu color={color} size={size} />
@@ -139,56 +139,67 @@ const TabNavigator = () => {
 
 export const RootNavigator = () => {
   return (
-    <SyncProvider>
-        <AuthProvider>
-            <RootContent />
-        </AuthProvider>
-    </SyncProvider>
+    <AuthProvider>
+      <RootContent />
+    </AuthProvider>
   );
 };
 
 const RootContent = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, isFirstLaunch, isServerUp } = useAuth();
   // useAutoSync(); // Removed as per request
-  
+
   if (loading) {
-      return <SplashScreen />;
+    return <SplashScreen />;
   }
 
-// ...
+  if (!isServerUp) {
+    return <ServerDownScreen />;
+  }
+
+
   return (
-        <NavigationContainer ref={navigationRef}>
-        <Stack.Navigator 
-            id="RootStack" 
-            screenOptions={{ 
-            headerShown: false,
-            animation: 'slide_from_right'
-            }}
-        >
-            {!user ? (
-                <>
-                    <Stack.Screen name="Login" component={LoginScreen} />
-                    <Stack.Screen name="DefaultPhone" component={DefaultPhoneScreen} />
-                    <Stack.Screen name="Permissions" component={PermissionCallHistoryScreen} />
-                    <Stack.Screen name="PermissionContacts" component={PermissionContactScreen} />
-                    <Stack.Screen name="PermissionNotification" component={PermissionNotificationScreen} />
-                    <Stack.Screen name="Privacy" component={PrivacyScreen} />
-                    <Stack.Screen name="ConnectSim" component={ConnectSimScreen} />
-                    <Stack.Screen name="Verification" component={VerificationScreen} />
-                    <Stack.Screen name="OtpVerification" component={OtpVerificationScreen} />
-                </>
-            ) : (
-                <>
-                    <Stack.Screen name="MainTabs" component={TabNavigator} />
-                    <Stack.Screen name="CallAnalytics" component={CallAnalyticsScreen} />
-                    <Stack.Screen name="ContactAnalytics" component={ContactAnalyticsScreen} />
-                    <Stack.Screen name="LeadDetails" component={LeadDetailsScreen} />
-                    <Stack.Screen name="LeadDispose" component={LeadDisposeScreen} /> 
-                    <Stack.Screen name="CallSummary" component={CallSummaryScreen} /> 
-                    <Stack.Screen name="ServerDown" component={ServerDownScreen} /> 
-                </>
+    <NavigationContainer ref={navigationRef}>
+      <Stack.Navigator
+        id="RootStack"
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right'
+        }}
+      >
+        {!user ? (
+          <>
+            {isFirstLaunch && (
+              <Stack.Screen name="Onboarding" component={OnboardingScreen} />
             )}
-        </Stack.Navigator>
-        </NavigationContainer>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="DefaultPhone" component={DefaultPhoneScreen} />
+            <Stack.Screen name="Permissions" component={PermissionCallHistoryScreen} />
+            <Stack.Screen name="PermissionContacts" component={PermissionContactScreen} />
+            <Stack.Screen name="PermissionNotification" component={PermissionNotificationScreen} />
+            <Stack.Screen name="Privacy" component={PrivacyScreen} />
+            <Stack.Screen name="ConnectSim" component={ConnectSimScreen} />
+            <Stack.Screen name="Verification" component={VerificationScreen} />
+            <Stack.Screen name="OtpVerification" component={OtpVerificationScreen} />
+          </>
+        ) : (
+          <>
+            <Stack.Screen name="MainTabs" component={TabNavigator} />
+            <Stack.Screen name="CallAnalytics" component={CallAnalyticsScreen} />
+            <Stack.Screen name="ContactAnalytics" component={ContactAnalyticsScreen} />
+            <Stack.Screen name="LeadDetails" component={LeadDetailsScreen} />
+            <Stack.Screen name="LeadDispose" component={LeadDisposeScreen} />
+            <Stack.Screen name="CallSummary" component={CallSummaryScreen} />
+            <Stack.Screen
+              name="CallScreen"
+              component={CallScreen}
+              options={{ headerShown: false, presentation: 'fullScreenModal' }}
+            />
+          </>
+        )}
+        <Stack.Screen name="ServerDown" component={ServerDownScreen} />
+        <Stack.Screen name="SessionExpired" component={SessionExpiredScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 };

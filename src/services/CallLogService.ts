@@ -1,5 +1,6 @@
 import { CallLog, CallType } from '../types/CallLog';
 import { PermissionsAndroid } from 'react-native';
+import apiClient from './apiClient';
 // Use optional runtime require for native call-log module so the bundle
 // doesn't fail when the native module isn't installed (development mode).
 
@@ -176,6 +177,30 @@ export const CallLogService = {
             return granted === PermissionsAndroid.RESULTS.GRANTED;
         } catch (err) {
             return false;
+        }
+    },
+
+    getRemoteCallLogs: async (leadId: string): Promise<CallLog[]> => {
+        try {
+            const response = await apiClient.get<any>(`/calls/lead/${leadId}`);
+            // Backend returns { success: true, data: [...] }
+            const logs = response.data?.data || [];
+
+            return logs.map((item: any) => ({
+                id: item._id || item.id,
+                phoneNumber: item.phoneNumber || item.leadPhone || '',
+                name: item.contactName || undefined,
+                // Backend uses callTime
+                dateTime: item.callTime || item.callDate || item.createdAt || new Date().toISOString(),
+                timestamp: new Date(item.callTime || item.callDate || item.createdAt).getTime(),
+                duration: item.duration || 0,
+                type: normalizeCallType((item.type || item.callType || '').toUpperCase()),
+                rawType: item.type,
+                simSlot: 0
+            }));
+        } catch (error) {
+            console.warn('Failed to fetch remote call logs:', error);
+            return [];
         }
     }
 };

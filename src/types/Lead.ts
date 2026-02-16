@@ -29,6 +29,11 @@ export interface Lead {
     tag?: string;
     dealAmount?: string;
     assignedUser?: string;
+    campaignName?: string;
+    campaign?: {
+        name: string;
+        _id: string;
+    };
 }
 
 export interface LeadsResponse {

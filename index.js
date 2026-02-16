@@ -12,3 +12,5 @@ AppRegistry.registerComponent('main', () => App);
 AppRegistry.registerComponent('callyzer-clone', () => App);
 // Native Android/iOS entry expects the application name; register it too
 AppRegistry.registerComponent('YDBabaTrack', () => App);
+AppRegistry.registerHeadlessTask('RecordingUploadTask', () => require('./src/tasks/RecordingUploadTask'));
+

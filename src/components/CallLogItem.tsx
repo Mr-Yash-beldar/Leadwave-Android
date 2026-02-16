@@ -1,10 +1,33 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Linking, Alert, ToastAndroid, Clipboard, NativeModules, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Linking,
+  Alert,
+  ToastAndroid,
+  Clipboard,
+  NativeModules,
+  Platform,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { CallLog, CallType } from '../types/CallLog';
 import { formatDuration, formatTime } from '../utils/formatters';
 import { colors } from '../theme/colors';
-import { Phone, MessageSquare, Copy, StickyNote, MessageCircle, PhoneIncoming, PhoneOutgoing, PhoneMissed, PhoneOff } from 'lucide-react-native';
+import {
+  Phone,
+  MessageSquare,
+  Copy,
+  StickyNote,
+  MessageCircle,
+  PhoneIncoming,
+  PhoneOutgoing,
+  PhoneMissed,
+  PhoneOff,
+  Mail,
+  User,
+} from 'lucide-react-native';
 
 const { PhoneModule } = NativeModules;
 
@@ -23,75 +46,109 @@ const getCallTypeInfo = (type: CallType) => {
   }
 };
 
+// ────────────────────────────────────────────────
+// Extended props – add isLeadLog flag + optional lead fields
 interface CallLogItemProps {
-  item: CallLog;
+  item: CallLog & {
+    leadName?: string;
+    leadEmail?: string;
+    leadMobile?: string;
+    notes?: string;
+    callStatus?: string;
+    recordingUrl?: string;
+  };
   simCount?: number;
+  isLeadLog?: boolean;           // ← new – tells us if this is CRM/lead data
 }
 
-export const CallLogItem: React.FC<CallLogItemProps> = ({ item, simCount = 0 }) => {
+export const CallLogItem: React.FC<CallLogItemProps> = ({
+  item,
+  simCount = 0,
+  isLeadLog = false,
+}) => {
   const navigation = useNavigation<any>();
   const { color, Icon: TypeIcon } = getCallTypeInfo(item.type);
 
+  const displayName = isLeadLog
+    ? item.leadName || item.name || 'Unknown Lead'
+    : item.name || 'Unknown';
+
+  const displayNumber = item.phoneNumber || item.leadMobile || 'No number';
+
   const handleCopy = () => {
-    Clipboard.setString(item.phoneNumber);
+    Clipboard.setString(displayNumber);
     if (ToastAndroid) {
-      ToastAndroid.show('Number copied to clipboard', ToastAndroid.SHORT);
+      ToastAndroid.show('Number copied', ToastAndroid.SHORT);
     }
   };
 
   const handleMessage = () => {
-    const url = Platform.OS === 'android' ? `sms:${item.phoneNumber}?body=` : `sms:${item.phoneNumber}`;
-    Linking.canOpenURL(url).then(supported => {
-      if (supported) {
-        Linking.openURL(url);
-      } else {
-        // Fallback for some devices where canOpenURL fails but openURL works
-        Linking.openURL(url).catch(() => {
-          Alert.alert('Error', 'Messaging app not found');
-        });
-      }
-    });
+    const url = Platform.OS === 'android' ? `sms:${displayNumber}?body=` : `sms:${displayNumber}`;
+    Linking.openURL(url).catch(() => Alert.alert('Error', 'Cannot open messaging'));
   };
 
   const handleWhatsApp = () => {
-    const cleanNumber = item.phoneNumber.replace(/[^\d+]/g, '');
-    const url = `whatsapp://send?phone=${cleanNumber}`;
-    Linking.openURL(url).catch(() => {
-      Alert.alert('Error', 'WhatsApp not installed');
-    });
+    const clean = displayNumber.replace(/[^\d+]/g, '');
+    Linking.openURL(`whatsapp://send?phone=${clean}`).catch(() =>
+      Alert.alert('Error', 'WhatsApp not installed')
+    );
   };
 
   const handleCall = () => {
-    // Direct call using the native module to skip the system dialer confirmation if possible
-    if (PhoneModule && PhoneModule.makeCall) {
-        PhoneModule.makeCall(item.phoneNumber, item.simSlot || 0);
+    if (PhoneModule?.makeCall) {
+      PhoneModule.makeCall(displayNumber, item.simSlot || 0);
     } else {
-        Linking.openURL(`tel:${item.phoneNumber}`);
+      Linking.openURL(`tel:${displayNumber}`);
     }
   };
 
   const handleAnalytics = () => {
-    navigation.navigate('ContactAnalytics', { 
-      phoneNumber: item.phoneNumber, 
-      name: item.name 
+    navigation.navigate('ContactAnalytics', {
+      phoneNumber: displayNumber,
+      name: displayName,
+      isLead: isLeadLog,
     });
   };
 
   return (
     <View style={styles.card}>
-      {/* Top Section */}
+      {/* Top Section – Name, Number, Meta */}
       <TouchableOpacity style={styles.topSection} onPress={handleAnalytics} activeOpacity={0.7}>
         <View style={[styles.avatar, { backgroundColor: color }]}>
-          <TypeIcon size={20} color="white" />
+          {isLeadLog ? <User size={20} color="white" /> : <TypeIcon size={20} color="white" />}
         </View>
+
         <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={1}>{item.name || 'Unknown'}</Text>
-          <Text style={styles.number}>{item.phoneNumber}</Text>
+          <Text style={styles.name} numberOfLines={1}>
+            {displayName}
+          </Text>
+          <Text style={styles.number}>{displayNumber}</Text>
+
+          {/* Lead extra info */}
+          {isLeadLog && (
+            <View style={styles.leadExtra}>
+              {item.leadEmail && (
+                <View style={styles.leadRow}>
+                  <Mail size={14} color="#757575" />
+                  <Text style={styles.leadText}>{item.leadEmail}</Text>
+                </View>
+              )}
+              {item.leadMobile && item.leadMobile !== displayNumber && (
+                <View style={styles.leadRow}>
+                  <Phone size={14} color="#757575" />
+                  <Text style={styles.leadText}>{item.leadMobile}</Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
+
         <View style={styles.meta}>
-          <View style={styles.simIndicator}>
-            <Text style={styles.simText}>{item.simSlot !== undefined ? item.simSlot + 1 : '1'}</Text>
-          </View>
+          {item.simSlot !== undefined && simCount > 1 && (
+            <View style={styles.simIndicator}>
+              <Text style={styles.simText}>{item.simSlot + 1}</Text>
+            </View>
+          )}
           <Text style={styles.time}>{formatTime(item.timestamp)}</Text>
           <Text style={styles.duration}>{formatDuration(item.duration)}</Text>
         </View>
@@ -99,37 +156,58 @@ export const CallLogItem: React.FC<CallLogItemProps> = ({ item, simCount = 0 }) 
 
       {/* Action Row */}
       <View style={styles.actionRow}>
-        <TouchableOpacity style={styles.actionButton} onPress={handleCopy} accessibilityLabel="Copy Number">
+        <TouchableOpacity style={styles.actionButton} onPress={handleCopy}>
           <Copy size={20} color="#9E9E9E" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton} onPress={handleMessage} accessibilityLabel="Send Message">
+        <TouchableOpacity style={styles.actionButton} onPress={handleMessage}>
           <MessageSquare size={20} color="#546E7A" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp} accessibilityLabel="WhatsApp Message">
-          <MessageCircle size={20} color="#25D366" /> 
+        <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp}>
+          <MessageCircle size={20} color="#25D366" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton} onPress={handleCall} accessibilityLabel="Make Call">
+        <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
           <Phone size={20} color="#546E7A" />
         </TouchableOpacity>
       </View>
-      
+
       {/* Recording Section */}
-      <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}>
-          {item.recordingUrl ? (
-             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E0F7FA', padding: 8, borderRadius: 8 }} onPress={() => Alert.alert("Playing", "Playing recording...")}>
-                <Text style={{ color: '#006064', fontWeight: 'bold' }}>Play Recording</Text>
-             </TouchableOpacity>
-          ) : (
-             <Text style={{ fontSize: 12, color: colors.textSecondary, fontStyle: 'italic', marginLeft: 4 }}>No recording available</Text>
-          )}
+      <View style={styles.recordingSection}>
+        {item.recordingUrl ? (
+          <TouchableOpacity
+            style={styles.recordingButton}
+            onPress={() => Alert.alert('Recording', 'Would play: ' + item.recordingUrl)}
+          >
+            <Text style={styles.recordingText}>▶ Play Recording</Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.noRecordingText}>No recording</Text>
+        )}
       </View>
 
+      {/* Notes / Call Status */}
+      {(isLeadLog && (item.notes || item.callStatus)) && (
+        <View style={styles.noteSection}>
+          <StickyNote size={16} color="#9E9E9E" />
+          <View style={{ flex: 1, marginLeft: 8 }}>
+            {item.callStatus && (
+              <Text style={styles.statusText}>Status: {item.callStatus}</Text>
+            )}
+            {item.notes && (
+              <Text style={styles.noteText} numberOfLines={2}>
+                {item.notes}
+              </Text>
+            )}
+          </View>
+        </View>
+      )}
 
-      {/* Note Section */}
-      <TouchableOpacity style={styles.noteSection}>
-        <StickyNote size={14} color="#9E9E9E" />
-        <Text style={styles.noteText}>Tap to add note & tag</Text>
-      </TouchableOpacity>
+      {/* Generic note section for personal logs */}
+      {!isLeadLog && (
+        <TouchableOpacity style={styles.noteSection}>
+          <StickyNote size={14} color="#9E9E9E" />
+          <Text style={styles.noteText}>Tap to add note & tag</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -151,7 +229,7 @@ const styles = StyleSheet.create({
   topSection: {
     flexDirection: 'row',
     padding: 16,
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   avatar: {
     width: 48,
@@ -173,10 +251,24 @@ const styles = StyleSheet.create({
   number: {
     fontSize: 14,
     color: '#757575',
+    marginBottom: 4,
+  },
+  leadExtra: {
+    marginTop: 4,
+  },
+  leadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  leadText: {
+    fontSize: 13,
+    color: '#555',
+    marginLeft: 6,
   },
   meta: {
     alignItems: 'flex-end',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
   },
   simIndicator: {
     borderWidth: 1.5,
@@ -205,22 +297,50 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingBottom: 16,
+    paddingBottom: 12,
     paddingHorizontal: 20,
   },
   actionButton: {
     padding: 8,
   },
+  recordingSection: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  recordingButton: {
+    backgroundColor: '#E0F7FA',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  recordingText: {
+    color: '#006064',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  noRecordingText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    marginLeft: 4,
+  },
   noteSection: {
-    backgroundColor: '#EEEEEE',
+    backgroundColor: '#F5F5F5',
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
   noteText: {
-    fontSize: 12,
-    color: '#757575',
-    marginLeft: 8,
+    fontSize: 13,
+    color: '#555',
+    flex: 1,
+  },
+  statusText: {
+    fontSize: 13,
+    color: '#2E7D32',
+    fontWeight: '500',
+    marginBottom: 4,
   },
 });
