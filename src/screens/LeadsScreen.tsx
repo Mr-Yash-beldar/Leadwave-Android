@@ -207,11 +207,9 @@ export const LeadsScreen = () => {
           </View>
         }
       />
-      {filteredLeads.length > 0 && (
-        <TouchableOpacity style={styles.startCallingButton} onPress={() => {/* Logic for start calling */ }}>
-          <Text style={styles.startCallingText}>Start Calling</Text>
-        </TouchableOpacity>
-      )}
+
+
+
     </View>
   );
 
@@ -231,12 +229,12 @@ export const LeadsScreen = () => {
           <TouchableOpacity onPress={() => setView('dashboard')} style={styles.backButton}>
             <ChevronLeft size={28} color={colors.black} />
           </TouchableOpacity>
-        ) : <View style={{ width: 40 }} />}
+        ) : <View style={{ width: 40, }} />}
 
         <Text style={styles.headerTitle}>{view === 'dashboard' ? 'My Leads' : getCategoryTitle()}</Text>
 
         <TouchableOpacity style={styles.filterButton}>
-          <Filter size={24} color={colors.black} />
+          {/* // <Filter size={24} color={colors.black} /> */}
         </TouchableOpacity>
       </View>
 

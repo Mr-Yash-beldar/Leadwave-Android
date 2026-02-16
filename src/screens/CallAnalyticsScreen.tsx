@@ -109,12 +109,12 @@ export const CallAnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation 
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Reports</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={handleShare}>
+          {/* <TouchableOpacity onPress={handleShare}>
             <Share2 size={24} color={colors.black} style={styles.headerActionIcon} />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => Alert.alert('Download', 'PDF Report generation started...')}>
             <Download size={24} color={colors.black} />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </View>
 
