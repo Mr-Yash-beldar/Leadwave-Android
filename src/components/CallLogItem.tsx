@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo, memo } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,6 @@ import { formatDuration, formatTime } from '../utils/formatters';
 import { colors } from '../theme/colors';
 import {
   Phone,
-  MessageSquare,
   Copy,
   StickyNote,
   MessageCircle,
@@ -41,20 +40,16 @@ import { api } from '../services/api';
 
 const { PhoneModule } = NativeModules;
 
-const getCallTypeInfo = (type: CallType) => {
-  switch (type) {
-    case CallType.Incoming:
-      return { color: '#8BC34A', Icon: PhoneIncoming };
-    case CallType.Outgoing:
-      return { color: '#FFA000', Icon: PhoneOutgoing };
-    case CallType.Missed:
-      return { color: '#E57373', Icon: PhoneMissed };
-    case CallType.Rejected:
-      return { color: '#E57373', Icon: PhoneOff };
-    default:
-      return { color: '#999', Icon: Phone };
-  }
+// Move outside component to avoid recreating on each render
+const CALL_TYPE_INFO = {
+  [CallType.Incoming]: { color: '#8BC34A', Icon: PhoneIncoming },
+  [CallType.Outgoing]: { color: '#FFA000', Icon: PhoneOutgoing },
+  [CallType.Missed]: { color: '#E57373', Icon: PhoneMissed },
+  [CallType.Rejected]: { color: '#E57373', Icon: PhoneOff },
+  [CallType.Unknown]: { color: '#999', Icon: Phone }
 };
+
+const getCallTypeInfo = (type: CallType) => CALL_TYPE_INFO[type] || CALL_TYPE_INFO[CallType.Unknown];
 
 interface Campaign {
   _id: string;
@@ -76,10 +71,164 @@ interface CallLogItemProps {
   simCount?: number;
   isLeadLog?: boolean;
   onAddLead?: (number: string) => void;
-  onDispose?: (item: any) => void; // Add dispose callback
+  onDispose?: (item: any) => void;
 }
 
-export const CallLogItem: React.FC<CallLogItemProps> = ({
+// Extracted modal component to prevent re-renders of main component
+const AddLeadModal = memo(({ 
+  visible, 
+  onClose, 
+  phoneNumber, 
+  onSubmit 
+}: { 
+  visible: boolean; 
+  onClose: () => void; 
+  phoneNumber: string; 
+  onSubmit: (data: { firstName: string; lastName: string; campaign: string }) => Promise<void>;
+}) => {
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [selectedCampaign, setSelectedCampaign] = useState<string>('');
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
+
+  const fetchCampaigns = useCallback(async () => {
+    try {
+      setLoadingCampaigns(true);
+      const res = await api.getCampaigns();
+      if (res?.data) setCampaigns(res.data);
+    } catch (error) {
+      console.log('Error fetching campaigns', error);
+    } finally {
+      setLoadingCampaigns(false);
+    }
+  }, []);
+
+  const handleSubmit = useCallback(async () => {
+    if (!firstName || !selectedCampaign) {
+      Alert.alert('Error', 'Please fill in First Name and select a Campaign.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await onSubmit({ firstName, lastName, campaign: selectedCampaign });
+      setFirstName('');
+      setLastName('');
+      setSelectedCampaign('');
+      onClose();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to create lead.');
+    } finally {
+      setLoading(false);
+    }
+  }, [firstName, lastName, selectedCampaign, onSubmit, onClose]);
+
+  const resetForm = useCallback(() => {
+    setFirstName('');
+    setLastName('');
+    setSelectedCampaign('');
+  }, []);
+
+  const handleClose = useCallback(() => {
+    resetForm();
+    onClose();
+  }, [resetForm, onClose]);
+
+  // Fetch campaigns when modal becomes visible
+  React.useEffect(() => {
+    if (visible) {
+      fetchCampaigns();
+    }
+  }, [visible, fetchCampaigns]);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={handleClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Add New Lead</Text>
+            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+              <X size={24} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.phoneDisplayContainer}>
+            <Text style={styles.phoneLabel}>Phone Number:</Text>
+            <Text style={styles.phoneNumber}>{phoneNumber}</Text>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={styles.inputGroup}>
+              <TextInput
+                style={styles.input}
+                placeholder="First Name *"
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholderTextColor="#999"
+                autoFocus={true}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Last Name"
+                value={lastName}
+                onChangeText={setLastName}
+                placeholderTextColor="#999"
+              />
+            </View>
+
+            <Text style={styles.label}>Select Campaign *</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.campaignList}>
+              {loadingCampaigns ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                campaigns.map((c) => (
+                  <TouchableOpacity
+                    key={c._id}
+                    style={[styles.campaignChip, selectedCampaign === c._id && styles.campaignChipSelected]}
+                    onPress={() => setSelectedCampaign(c._id)}
+                  >
+                    <Text
+                      style={[
+                        styles.campaignChipText,
+                        selectedCampaign === c._id && styles.campaignChipTextSelected,
+                      ]}
+                    >
+                      {c.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+
+            <View style={styles.formActions}>
+              <TouchableOpacity style={styles.cancelButton} onPress={handleClose}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveButton, loading && styles.saveButtonDisabled]}
+                onPress={handleSubmit}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color={colors.white} size="small" />
+                ) : (
+                  <>
+                    <CheckCircle size={18} color={colors.white} />
+                    <Text style={styles.saveButtonText}>Save Lead</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+});
+
+export const CallLogItem: React.FC<CallLogItemProps> = memo(({
   item,
   simCount = 0,
   isLeadLog = false,
@@ -88,110 +237,110 @@ export const CallLogItem: React.FC<CallLogItemProps> = ({
 }) => {
   const navigation = useNavigation<any>();
   const [isAddLeadModalVisible, setIsAddLeadModalVisible] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [checkingLead, setCheckingLead] = useState(false);
+
+  // Memoized values to prevent recalculations
+  const isMyLead = useMemo(() => !!(item.leadId || item.leadData), [item.leadId, item.leadData]);
   
-  // Add Lead Form State
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [selectedCampaign, setSelectedCampaign] = useState<string>('');
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const showAddLeadButton = useMemo(() => 
+    !isLeadLog && !isMyLead && !item.disposed,
+    [isLeadLog, isMyLead, item.disposed]
+  );
 
-  const { color, Icon: TypeIcon } = getCallTypeInfo(item.type);
+  const showDisposeButton = useMemo(() => 
+    !item.disposed && (isLeadLog || isMyLead),
+    [item.disposed, isLeadLog, isMyLead]
+  );
 
-  const displayName = isLeadLog
-    ? item.leadName || item.name || 'Unknown Lead'
-    : item.name || 'Unknown';
+  const displayName = useMemo(() => 
+    isMyLead
+      ? (item.leadName || `${item.leadData?.firstName || ''} ${item.leadData?.lastName || ''}`.trim() || 'Unknown Lead')
+      : (item.name || item.phoneNumber || 'Unknown'),
+    [isMyLead, item.leadName, item.leadData, item.name, item.phoneNumber]
+  );
 
-  const displayNumber = item.phoneNumber || item.leadMobile || 'No number';
+  const displayNumber = useMemo(() => 
+    item.phoneNumber || item.leadMobile || 'No number',
+    [item.phoneNumber, item.leadMobile]
+  );
 
-  const handleCopy = () => {
+  const { color, Icon: TypeIcon } = useMemo(() => 
+    getCallTypeInfo(item.type),
+    [item.type]
+  );
+
+  // Callback handlers - all memoized
+  const handleCopy = useCallback(() => {
     Clipboard.setString(displayNumber);
-    if (ToastAndroid) {
+    if (Platform.OS === 'android') {
       ToastAndroid.show('Number copied', ToastAndroid.SHORT);
     }
-  };
+  }, [displayNumber]);
 
-  const handleMessage = () => {
+  const handleMessage = useCallback(() => {
     const url = Platform.OS === 'android' ? `sms:${displayNumber}?body=` : `sms:${displayNumber}`;
     Linking.openURL(url).catch(() => Alert.alert('Error', 'Cannot open messaging'));
-  };
+  }, [displayNumber]);
 
-  const handleWhatsApp = () => {
+  const handleWhatsApp = useCallback(() => {
     const clean = displayNumber.replace(/[^\d+]/g, '');
     Linking.openURL(`whatsapp://send?phone=${clean}`).catch(() =>
       Alert.alert('Error', 'WhatsApp not installed')
     );
-  };
+  }, [displayNumber]);
 
-  const handleCall = () => {
+  const handleCall = useCallback(() => {
     if (PhoneModule?.makeCall) {
       PhoneModule.makeCall(displayNumber, item.simSlot || 0);
     } else {
       Linking.openURL(`tel:${displayNumber}`);
     }
-  };
+  }, [displayNumber, item.simSlot]);
 
-  const handleAnalytics = () => {
+  const handleAnalytics = useCallback(() => {
     navigation.navigate('ContactAnalytics', {
       phoneNumber: displayNumber,
       name: displayName,
-      isLead: isLeadLog,
+      isLead: isMyLead,
     });
-  };
+  }, [navigation, displayNumber, displayName, isMyLead]);
 
-  // Handle Lead Press - Navigate to Lead Details
-  const handleLeadPress = () => {
-    if (isLeadLog && (item.leadData || item.leadId)) {
+  const handleLeadPress = useCallback(() => {
+    if (isMyLead) {
       if (item.leadData) {
         navigation.navigate('LeadDetails', { lead: item.leadData });
       } else if (item.leadId) {
         navigation.navigate('LeadDetails', { leadId: item.leadId });
       }
     }
-  };
+  }, [isMyLead, item.leadData, item.leadId, navigation]);
 
-  // Handle Dispose Press
-  // In CallLogItem.tsx, check the handleDisposePress function:
-
-const handleDisposePress = () => {
-  console.log('Dispose pressed for:', displayNumber); // Add this for debugging
-  
-  if (onDispose) {
-    // If parent provided onDispose, call it
-    onDispose(item);
-  } else {
-    // Fallback dispose behavior
-    Alert.alert(
-      'Dispose Lead',
-      'Are you sure you want to dispose this lead?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Dispose',
-          style: 'destructive',
-          onPress: () => {
-            // Navigate to lead details for disposal
-            if (item.leadData) {
-              navigation.navigate('LeadDetails', { 
-                lead: item.leadData,
-                fromCall: true
-              });
-            } else if (item.leadId) {
-              navigation.navigate('LeadDetails', { 
-                leadId: item.leadId,
-                fromCall: true
-              });
+  const handleDisposePress = useCallback(() => {
+    if (onDispose) {
+      onDispose(item);
+    } else {
+      Alert.alert(
+        'Dispose Lead',
+        'Are you sure you want to dispose this lead?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Dispose',
+            style: 'destructive',
+            onPress: () => {
+              if (item.leadData) {
+                navigation.navigate('LeadDetails', { lead: item.leadData, fromCall: true });
+              } else if (item.leadId) {
+                navigation.navigate('LeadDetails', { leadId: item.leadId, fromCall: true });
+              }
             }
           }
-        }
-      ]
-    );
-  }
-};
+        ]
+      );
+    }
+  }, [onDispose, item, navigation]);
 
-  const checkIfLeadExists = async () => {
+  const checkIfLeadExists = useCallback(async (): Promise<boolean> => {
     try {
       setCheckingLead(true);
       const res = await api.checkLeadAssignment(displayNumber);
@@ -199,9 +348,7 @@ const handleDisposePress = () => {
         Alert.alert(
           'Already a Lead',
           `This number is already assigned to ${res.assignedTo.name || 'another user'}`,
-          [
-            { text: 'OK' }
-          ]
+          [{ text: 'OK' }]
         );
         return true;
       }
@@ -212,92 +359,50 @@ const handleDisposePress = () => {
     } finally {
       setCheckingLead(false);
     }
-  };
+  }, [displayNumber]);
 
-  const handleAddLeadPress = async () => {
+  const handleAddLeadPress = useCallback(async () => {
     const exists = await checkIfLeadExists();
     if (exists) return;
-    
-    await fetchCampaigns();
     setIsAddLeadModalVisible(true);
-  };
+  }, [checkIfLeadExists]);
 
-  const fetchCampaigns = async () => {
-    try {
-      setLoadingCampaigns(true);
-      const res = await api.getCampaigns();
-      if (res && res.data) {
-        setCampaigns(res.data);
-      }
-    } catch (error) {
-      console.log('Error fetching campaigns', error);
-    } finally {
-      setLoadingCampaigns(false);
-    }
-  };
+  const handleCreateLead = useCallback(async (data: { firstName: string; lastName: string; campaign: string }) => {
+    await api.createLead({
+      firstName: data.firstName,
+      lastName: data.lastName,
+      phone: displayNumber,
+      campaign: data.campaign,
+      date: new Date().toISOString(),
+    });
+    Alert.alert('Success', 'Lead created successfully!');
+    if (onAddLead) onAddLead(displayNumber);
+  }, [displayNumber, onAddLead]);
 
-  const handleCreateLead = async () => {
-    if (!firstName || !selectedCampaign) {
-      Alert.alert('Error', 'Please fill in First Name and select a Campaign.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await api.createLead({
-        firstName,
-        lastName,
-        phone: displayNumber,
-        campaign: selectedCampaign,
-        date: new Date().toISOString()
-      });
-      Alert.alert('Success', 'Lead created successfully!');
-      setIsAddLeadModalVisible(false);
-      resetForm();
-      
-      if (onAddLead) {
-        onAddLead(displayNumber);
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to create lead.');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const resetForm = () => {
-    setFirstName('');
-    setLastName('');
-    setSelectedCampaign('');
-  };
-
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
     setIsAddLeadModalVisible(false);
-    resetForm();
-  };
+  }, []);
 
   return (
     <>
       <View style={styles.card}>
-        {/* Top Section – Name, Number, Meta */}
-        <TouchableOpacity 
-          style={styles.topSection} 
-          onPress={isLeadLog ? handleLeadPress : handleAnalytics} 
+        <TouchableOpacity
+          style={styles.topSection}
+          onPress={isMyLead ? handleLeadPress : handleAnalytics}
           activeOpacity={0.7}
         >
           <View style={[styles.avatar, { backgroundColor: color }]}>
-            {isLeadLog ? <User size={20} color="white" /> : <TypeIcon size={20} color="white" />}
+            {isMyLead ? <User size={20} color="white" /> : <TypeIcon size={20} color="white" />}
           </View>
 
           <View style={styles.info}>
             <Text style={styles.name} numberOfLines={1}>
               {displayName}
             </Text>
+            
             <Text style={styles.number}>{displayNumber}</Text>
 
-            {/* Lead extra info */}
-            {isLeadLog && (
+            {isMyLead && (
               <View style={styles.leadExtra}>
                 {item.leadEmail && (
                   <View style={styles.leadRow}>
@@ -313,13 +418,13 @@ const handleDisposePress = () => {
                 )}
               </View>
             )}
-            
-            {/* Show disposed tag if applicable */}
-            {/* {item.disposed && (
+
+            {item.disposed && (
               <View style={styles.disposedTag}>
+                <CheckCircle size={14} color="#22c55e" />
                 <Text style={styles.disposedText}>Disposed</Text>
               </View>
-            )} */}
+            )}
           </View>
 
           <View style={styles.meta}>
@@ -333,12 +438,10 @@ const handleDisposePress = () => {
           </View>
         </TouchableOpacity>
 
-        {/* Action Row */}
         <View style={styles.actionRow}>
-          {/* Add Lead Button - Show for non-lead logs only */}
-          {!isLeadLog && (
-            <TouchableOpacity 
-              style={styles.actionButton} 
+          {showAddLeadButton && (
+            <TouchableOpacity
+              style={styles.actionButton}
               onPress={handleAddLeadPress}
               disabled={checkingLead}
             >
@@ -349,56 +452,27 @@ const handleDisposePress = () => {
               )}
             </TouchableOpacity>
           )}
-          
-          {/* Dispose Button - Show for lead logs that are not disposed */}
-          {/* {isLeadLog && !item.disposed && ( */}
-            <TouchableOpacity 
-              style={styles.actionButton} 
-              onPress={handleDisposePress}
-            >
-              <Trash2 size={20} color={colors.error} />
+
+          {showDisposeButton && (
+            <TouchableOpacity style={styles.actionButton} onPress={handleDisposePress}>
+              <Trash2 size={20} color={colors.error || '#ef4444'} />
             </TouchableOpacity>
-          {/* )} */}
-          
+          )}
+
           <TouchableOpacity style={styles.actionButton} onPress={handleCopy}>
             <Copy size={20} color="#9E9E9E" />
           </TouchableOpacity>
-          
-          {/* <TouchableOpacity style={styles.actionButton} onPress={handleMessage}>
-            <MessageSquare size={20} color="#546E7A" />
-          </TouchableOpacity>
-          
+
           <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp}>
             <MessageCircle size={20} color="#25D366" />
           </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
-            <Phone size={20} color="#546E7A" />
-          </TouchableOpacity> */}
         </View>
 
-        {/* Recording Section */}
-        <View style={styles.recordingSection}>
-          {item.recordingUrl ? (
-            <TouchableOpacity
-              style={styles.recordingButton}
-              onPress={() => Alert.alert('Recording', 'Would play: ' + item.recordingUrl)}
-            >
-              <Text style={styles.recordingText}>▶ Play Recording</Text>
-            </TouchableOpacity>
-          ) : (
-            <Text style={styles.noRecordingText}>No recording</Text>
-          )}
-        </View>
-
-        {/* Notes / Call Status */}
-        {(isLeadLog && (item.notes || item.callStatus)) && (
+        {isMyLead && (item.notes || item.callStatus) && (
           <View style={styles.noteSection}>
             <StickyNote size={16} color="#9E9E9E" />
             <View style={{ flex: 1, marginLeft: 8 }}>
-              {item.callStatus && (
-                <Text style={styles.statusText}>Status: {item.callStatus}</Text>
-              )}
+              {item.callStatus && <Text style={styles.statusText}>Status: {item.callStatus}</Text>}
               {item.notes && (
                 <Text style={styles.noteText} numberOfLines={2}>
                   {item.notes}
@@ -408,8 +482,7 @@ const handleDisposePress = () => {
           </View>
         )}
 
-        {/* Generic note section for personal logs */}
-        {!isLeadLog && (
+        {!isMyLead && !isLeadLog && (
           <TouchableOpacity style={styles.noteSection}>
             <StickyNote size={14} color="#9E9E9E" />
             <Text style={styles.noteText}>Tap to add note & tag</Text>
@@ -417,94 +490,25 @@ const handleDisposePress = () => {
         )}
       </View>
 
-      {/* Add Lead Modal */}
-      <Modal
+      <AddLeadModal
         visible={isAddLeadModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={closeModal}
-      >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalOverlay}
-        >
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add New Lead</Text>
-              <TouchableOpacity onPress={closeModal} style={styles.closeButton}>
-                <X size={24} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.phoneDisplayContainer}>
-              <Text style={styles.phoneLabel}>Phone Number:</Text>
-              <Text style={styles.phoneNumber}>{displayNumber}</Text>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={styles.inputGroup}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="First Name *"
-                  value={firstName}
-                  onChangeText={setFirstName}
-                  placeholderTextColor="#999"
-                  autoFocus={true}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Last Name"
-                  value={lastName}
-                  onChangeText={setLastName}
-                  placeholderTextColor="#999"
-                />
-              </View>
-
-              <Text style={styles.label}>Select Campaign *</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.campaignList}>
-                {loadingCampaigns ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  campaigns.map(c => (
-                    <TouchableOpacity
-                      key={c._id}
-                      style={[styles.campaignChip, selectedCampaign === c._id && styles.campaignChipSelected]}
-                      onPress={() => setSelectedCampaign(c._id)}
-                    >
-                      <Text style={[styles.campaignChipText, selectedCampaign === c._id && styles.campaignChipTextSelected]}>
-                        {c.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </ScrollView>
-
-              <View style={styles.formActions}>
-                <TouchableOpacity style={styles.cancelButton} onPress={closeModal}>
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.saveButton, loading && styles.saveButtonDisabled]} 
-                  onPress={handleCreateLead} 
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color={colors.white} size="small" />
-                  ) : (
-                    <>
-                      <CheckCircle size={18} color={colors.white} />
-                      <Text style={styles.saveButtonText}>Save Lead</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        onClose={closeModal}
+        phoneNumber={displayNumber}
+        onSubmit={handleCreateLead}
+      />
     </>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison for memo to prevent unnecessary re-renders
+  return (
+    prevProps.item.id === nextProps.item.id &&
+    prevProps.item.disposed === nextProps.item.disposed &&
+    prevProps.item.notes === nextProps.item.notes &&
+    prevProps.item.callStatus === nextProps.item.callStatus &&
+    prevProps.simCount === nextProps.simCount &&
+    prevProps.isLeadLog === nextProps.isLeadLog
+  );
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -561,15 +565,18 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   disposedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFEBEE',
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingVertical: 4,
+    borderRadius: 12,
     alignSelf: 'flex-start',
-    marginTop: 4,
+    marginTop: 6,
+    gap: 4,
   },
   disposedText: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.error,
     fontWeight: '600',
   },
@@ -610,28 +617,6 @@ const styles = StyleSheet.create({
   actionButton: {
     padding: 8,
   },
-  recordingSection: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  recordingButton: {
-    backgroundColor: '#E0F7FA',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  recordingText: {
-    color: '#006064',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  noRecordingText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    fontStyle: 'italic',
-    marginLeft: 4,
-  },
   noteSection: {
     backgroundColor: '#F5F5F5',
     flexDirection: 'row',
@@ -650,7 +635,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginBottom: 4,
   },
-  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
