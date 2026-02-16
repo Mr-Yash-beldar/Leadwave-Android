@@ -4,16 +4,18 @@ import {
   StyleSheet,
   FlatList,
   Text,
-  ActivityIndicator,
   Dimensions,
-  NativeModules,
   Platform,
   TouchableOpacity,
   AppState,
   RefreshControl,
+  Alert,
+  Linking,
+  ActivityIndicator,
+  NativeModules
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { CallLogService } from '../services/CallLogService';
 import { CallLog, CallType } from '../types/CallLog';
 import { CallLogItem } from '../components/CallLogItem';
@@ -28,15 +30,26 @@ import { OngoingCallCard } from '../components/OngoingCallCard';
 import { AddLeadModal } from '../components/AddLeadModal';
 import { colors } from '../theme/colors';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CATEGORIES = ['all', 'incoming', 'outgoing', 'missed', 'rejected'];
 
 type SourceType = 'personal' | 'leads';
 
+interface Lead {
+  _id: string;
+  id?: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  mobile?: string;
+  alt_phone?: string;
+  leadStatus?: string;
+}
+
 interface HistoryPageProps {
   category: string;
-  logs: CallLog[];                    // personal logs
-  leadLogs: CallLog[];                // API / lead logs
+  logs: CallLog[];
+  leadLogs: CallLog[];
   searchQuery: string;
   simCount: number;
   simFilter: 'all' | number;
@@ -47,12 +60,17 @@ interface HistoryPageProps {
   refreshing: boolean;
   onAddLead: (number: string) => void;
   source: SourceType;
+  navigation: any;
+  leads: Lead[];
 }
 
 export const HistoryScreen: React.FC = () => {
-  const [logs, setLogs] = useState<CallLog[]>([]);           // Personal / device logs
-  const [leadLogs, setLeadLogs] = useState<CallLog[]>([]);   // Lead / CRM logs from API
+  // ============ ALL useState HOOKS FIRST ============
+  const [logs, setLogs] = useState<CallLog[]>([]);
+  const [leadLogs, setLeadLogs] = useState<CallLog[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [source, setSource] = useState<SourceType>('personal');
+  const navigation = useNavigation<any>();
 
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,18 +89,42 @@ export const HistoryScreen: React.FC = () => {
   const [activeCallNumber, setActiveCallNumber] = useState('');
 
   const { user } = useAuth();
+  
+  // ============ ALL useRef HOOKS ============
   const pagerRef = useRef<FlatList>(null);
 
-  // ─── Personal logs fetch ────────────────────────────────────────
-  useFocusEffect(
-    useCallback(() => {
-      if (!dataFetched && source === 'personal') {
-        fetchPersonalLogs();
+  // ============ ALL useCallback HOOKS ============
+  // Fetch leads function
+  const fetchLeads = useCallback(async () => {
+    try {
+      const response = await api.get('/leads/assigned');
+      if (response?.data) {
+        setLeads(response.data);
       }
-    }, [dataFetched, source])
-  );
+    } catch (error) {
+      console.error('Error fetching leads:', error);
+    }
+  }, []);
 
-  const fetchPersonalLogs = async (force: boolean = false) => {
+  // Helper function to find lead by phone number
+  const findLeadByNumber = useCallback((phoneNumber: string): Lead | null => {
+    if (!phoneNumber || !leads.length) return null;
+    
+    const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
+    
+    return leads.find(lead => {
+      const leadPhone = lead.phone?.replace(/[^0-9]/g, '') || '';
+      const leadMobile = lead.mobile?.replace(/[^0-9]/g, '') || '';
+      const leadAltPhone = lead.alt_phone?.replace(/[^0-9]/g, '') || '';
+      
+      return leadPhone === cleanNumber || 
+             leadMobile === cleanNumber || 
+             leadAltPhone === cleanNumber;
+    }) || null;
+  }, [leads]);
+
+  // Fetch personal logs
+  const fetchPersonalLogs = useCallback(async (force: boolean = false) => {
     if (!force && dataFetched) return;
 
     if (!dataFetched) setInitialLoading(true);
@@ -109,11 +151,35 @@ export const HistoryScreen: React.FC = () => {
       setSimCount(count);
       setDaysOffset(currentOffset);
 
+      // Format personal logs and check if they match any lead
+      const formattedLogs = fetchedLogs.map(log => {
+        const matchedLead = findLeadByNumber(log.phoneNumber);
+        
+        const baseLog = {
+          ...log,
+          name: log.name || log.phoneNumber || 'Unknown',
+          leadName: log.name || log.phoneNumber || 'Unknown',
+        };
+
+        // If matched with a lead, add lead data
+        if (matchedLead) {
+          return {
+            ...baseLog,
+            leadName: `${matchedLead.firstName} ${matchedLead.lastName}`.trim(),
+            leadId: matchedLead._id || matchedLead.id,
+            leadData: matchedLead,
+            disposed: matchedLead.leadStatus === 'disposed'
+          };
+        }
+        
+        return baseLog;
+      });
+
       if (force || !dataFetched) {
-        setLogs(fetchedLogs);
+        setLogs(formattedLogs);
       } else {
         setLogs((prev) => {
-          const combined = [...prev, ...fetchedLogs];
+          const combined = [...prev, ...formattedLogs];
           return Array.from(new Map(combined.map((item) => [item.id, item])).values()).sort(
             (a, b) => b.timestamp - a.timestamp
           );
@@ -130,93 +196,75 @@ export const HistoryScreen: React.FC = () => {
       setInitialLoading(false);
       setRefreshing(false);
     }
-  };
- 
-  // ─── Lead logs (API) fetch ──────────────────────────────────────
+  }, [dataFetched, findLeadByNumber]);
+
+  // Fetch lead logs
   const fetchLeadLogs = useCallback(async (force = false) => {
     if (!force && leadLogs.length > 0) return;
 
     try {
-      const response = await api.getCallLogs(); // ← adjust endpoint/method if needed
-      console.log('Lead logs API response:', response);
- 
+      if (force) setRefreshing(true);
+      else setInitialLoading(true);
+
+      const response = await api.getCallLogs();
+
       if (response?.success && Array.isArray(response.data)) {
-        // IMPORTANT: Map API shape → CallLog type
-        const formatted: CallLog[] = response.data.map((item: any) => ({
-          id: item.id || item.callId || String(Math.random()),
-          phoneNumber: item.phone || item.number || item.contactNumber || '',
-          name: item.leadName || item.contactName || item.name || '',
-          type:
-            item.direction === 'in' || item.type === 'incoming'
-              ? CallType.Incoming
-              : item.direction === 'out' || item.type === 'outgoing'
-              ? CallType.Outgoing
-              : item.missed || item.type === 'missed'
-              ? CallType.Missed
-              : CallType.Rejected,
-          timestamp: new Date(item.createdAt || item.date || item.timestamp).getTime(),
-          duration: item.duration || 0,
-          simSlot: item.sim || item.simSlot || 0,
-          // Add any other fields your CallLog type & UI need
-        })).sort((a, b) => b.timestamp - a.timestamp);
-console.log(formatted);
-// console.log('formatted');
+        const formatted: CallLog[] = response.data.map((item: any) => {
+          const lead = item.lead || {};
+          const leadName = lead.fullName || `${lead.firstName || ''} ${lead.lastName || ''}`.trim();
+          const phoneNumber = lead.phone || lead.mobile || '';
+
+          let callType = CallType.Unknown;
+          switch (item.callType?.toLowerCase()) {
+            case 'incoming':
+              callType = CallType.Incoming;
+              break;
+            case 'outgoing':
+              callType = CallType.Outgoing;
+              break;
+            case 'missed':
+              callType = CallType.Missed;
+              break;
+            default:
+              callType = CallType.Unknown;
+          }
+
+          return {
+            id: item.id,
+            phoneNumber: phoneNumber,
+            name: leadName || 'Unknown Lead',
+            leadName: leadName,
+            type: callType,
+            timestamp: new Date(item.callTime).getTime(),
+            duration: item.callDuration || 0,
+            simSlot: 0,
+            leadEmail: lead.email,
+            leadMobile: phoneNumber,
+            notes: item.notes,
+            callStatus: item.callStatus,
+            recordingUrl: item.recording,
+            disposed: lead.leadStatus === 'disposed',
+            leadId: lead.id,
+            leadData: lead
+          };
+        }).sort((a, b) => b.timestamp - a.timestamp);
 
         setLeadLogs(formatted);
+      } else {
+        setLeadLogs([]);
       }
-    } catch (err) {
-      console.error('Failed to fetch lead logs:', err);
+    } catch (error) {
+      console.error('Error fetching lead logs:', error);
+      Alert.alert('Error', 'Failed to load lead call logs');
+    } finally {
+      setInitialLoading(false);
+      setRefreshing(false);
     }
-  }, [leadLogs.length]);
+  }, []);
 
-  // ─── Combined logic ─────────────────────────────────────────────
-  useEffect(() => {
-    if (source === 'personal') {
-      fetchPersonalLogs();
-    } else if (source === 'leads') {
-      fetchLeadLogs(true);
-    }
-  }, [source]);
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        if (source === 'personal') fetchPersonalLogs(true);
-        else fetchLeadLogs(true);
-      }
-    });
-    return () => subscription.remove();
-  }, [source]);
-
-  const handleRefresh = useCallback(() => {
-    if (source === 'personal') fetchPersonalLogs(true);
-    else fetchLeadLogs(true);
-  }, [source]);
-
-  const handleFilterSelect = (newFilter: string) => {
-    const index = CATEGORIES.indexOf(newFilter);
-    if (index !== -1) {
-      setFilter(newFilter);
-      pagerRef.current?.scrollToIndex({ index, animated: true });
-    }
-  };
-
-  const onPagerScroll = useCallback(
-    (event: any) => {
-      const offsetX = event.nativeEvent.contentOffset.x;
-      const width = event.nativeEvent.layoutMeasurement.width;
-      const index = Math.round(offsetX / width);
-
-      if (index >= 0 && index < CATEGORIES.length) {
-        const newFilter = CATEGORIES[index];
-        if (newFilter !== filter) setFilter(newFilter);
-      }
-    },
-    [filter]
-  );
-
-  const loadMore = async () => {
-    if (loadingMore || !hasMore || source === 'leads') return; // ← no pagination for leads (yet)
+  // Load more personal logs
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || source === 'leads') return;
 
     setLoadingMore(true);
     try {
@@ -227,9 +275,34 @@ console.log(formatted);
 
       while (fetchedLogs.length === 0 && attempts < MAX_ATTEMPTS && nextOffset < 365) {
         fetchedLogs = await CallLogService.getCallLogsByDay(nextOffset);
-        if (fetchedLogs.length === 0) {
+        
+        const formattedLogs = fetchedLogs.map(log => {
+          const matchedLead = findLeadByNumber(log.phoneNumber);
+          
+          const baseLog = {
+            ...log,
+            name: log.name || log.phoneNumber || 'Unknown',
+            leadName: log.name || log.phoneNumber || 'Unknown',
+          };
+
+          if (matchedLead) {
+            return {
+              ...baseLog,
+              leadName: `${matchedLead.firstName} ${matchedLead.lastName}`.trim(),
+              leadId: matchedLead._id || matchedLead.id,
+              leadData: matchedLead,
+              disposed: matchedLead.leadStatus === 'disposed'
+            };
+          }
+          
+          return baseLog;
+        });
+        
+        if (formattedLogs.length === 0) {
           nextOffset++;
           attempts++;
+        } else {
+          fetchedLogs = formattedLogs;
         }
       }
 
@@ -249,14 +322,47 @@ console.log(formatted);
     } finally {
       setLoadingMore(false);
     }
-  };
+  }, [loadingMore, hasMore, source, daysOffset, findLeadByNumber]);
 
-  const openAddLead = (number: string) => {
+  // Handle refresh
+  const handleRefresh = useCallback(() => {
+    fetchLeads();
+    if (source === 'personal') fetchPersonalLogs(true);
+    else fetchLeadLogs(true);
+  }, [source, fetchLeads, fetchPersonalLogs, fetchLeadLogs]);
+
+  // Handle filter selection
+  const handleFilterSelect = useCallback((newFilter: string) => {
+    const index = CATEGORIES.indexOf(newFilter);
+    if (index !== -1) {
+      setFilter(newFilter);
+      pagerRef.current?.scrollToIndex({ index, animated: true });
+    }
+  }, []);
+
+  // Handle pager scroll
+  const onPagerScroll = useCallback(
+    (event: any) => {
+      const offsetX = event.nativeEvent.contentOffset.x;
+      const width = event.nativeEvent.layoutMeasurement.width;
+      const index = Math.round(offsetX / width);
+
+      if (index >= 0 && index < CATEGORIES.length) {
+        const newFilter = CATEGORIES[index];
+        if (newFilter !== filter) setFilter(newFilter);
+      }
+    },
+    [filter]
+  );
+
+  // Open add lead modal
+  const openAddLead = useCallback((number: string) => {
     setActiveCallNumber(number);
     setIsLeadModalVisible(true);
-  };
+  }, []);
 
-  const renderCategoryPage = ({ item: cat }: { item: string }) => (
+  // Render category page
+  const renderCategoryPage = useCallback(({ item: cat }: { item: string }) => (
     <HistoryPage
       category={cat}
       logs={logs}
@@ -271,9 +377,47 @@ console.log(formatted);
       refreshing={refreshing}
       onAddLead={openAddLead}
       source={source}
+      navigation={navigation}
+      leads={leads}
     />
+  ), [logs, leadLogs, searchQuery, simCount, simFilter, loadMore, loadingMore, initialLoading, handleRefresh, refreshing, openAddLead, source, navigation, leads]);
+
+  // ============ ALL useEffect HOOKS ============
+  // Initial data load
+  useEffect(() => {
+    const loadInitialData = async () => {
+      await fetchLeads();
+      if (source === 'personal') {
+        await fetchPersonalLogs();
+      } else {
+        await fetchLeadLogs(true);
+      }
+    };
+    loadInitialData();
+  }, [source, fetchLeads, fetchPersonalLogs, fetchLeadLogs]);
+
+  // App state change listener
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        fetchLeads();
+        if (source === 'personal') fetchPersonalLogs(true);
+        else fetchLeadLogs(true);
+      }
+    });
+    return () => subscription.remove();
+  }, [source, fetchLeads, fetchPersonalLogs, fetchLeadLogs]);
+
+  // Focus effect
+  useFocusEffect(
+    useCallback(() => {
+      if (!dataFetched && source === 'personal') {
+        fetchPersonalLogs();
+      }
+    }, [dataFetched, source, fetchPersonalLogs])
   );
 
+  // ============ COMPONENT RETURN ============
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <View style={styles.header}>
@@ -328,7 +472,7 @@ console.log(formatted);
       <View style={styles.contentContainer}>
         <SearchBar value={searchQuery} onChangeText={setSearchQuery} />
 
-        {/* ─── Source Toggle ──────────────────────────────────────── */}
+        {/* Source Toggle */}
         <View style={styles.sourceToggleContainer}>
           <TouchableOpacity
             style={[styles.sourceOption, source === 'personal' && styles.sourceOptionActive]}
@@ -408,6 +552,8 @@ const HistoryPage = React.memo(
     refreshing,
     onAddLead,
     source,
+    navigation,
+    leads,
   }: HistoryPageProps) => {
     const activeLogs = source === 'leads' ? leadLogs : logs;
 
@@ -415,12 +561,10 @@ const HistoryPage = React.memo(
       if (initialLoading) return [];
 
       const filtered = activeLogs.filter((log: CallLog) => {
-        // SIM filter — you may want to disable for lead logs
         if (source === 'personal' && simFilter !== 'all') {
           if (log.simSlot !== simFilter) return false;
         }
 
-        // Category filter
         if (category !== 'all') {
           if (category === 'incoming' && log.type !== CallType.Incoming) return false;
           if (category === 'outgoing' && log.type !== CallType.Outgoing) return false;
@@ -428,14 +572,13 @@ const HistoryPage = React.memo(
           if (category === 'rejected' && log.type !== CallType.Rejected) return false;
         }
 
-        // Search
         if (searchQuery) {
           const q = searchQuery.toLowerCase();
           return (
             (log.name && log.name.toLowerCase().includes(q)) ||
             log.phoneNumber.includes(q) ||
             (log.leadName && log.leadName.toLowerCase().includes(q))
-          ); 
+          );
         }
         return true;
       });
@@ -453,10 +596,16 @@ const HistoryPage = React.memo(
         let dateLabel = logDate.toDateString();
         if (logDate.toDateString() === today.toDateString()) dateLabel = 'Today';
         else if (logDate.toDateString() === yesterday.toDateString()) dateLabel = 'Yesterday';
-        else dateLabel = logDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+        else dateLabel = logDate.toLocaleDateString('en-US', { 
+          day: 'numeric', 
+          month: 'short', 
+          year: 'numeric' 
+        });
 
         if (dateLabel !== currentDate) {
-          if (currentGroup.length > 0) groups.push({ title: currentDate, data: currentGroup });
+          if (currentGroup.length > 0) {
+            groups.push({ title: currentDate, data: [...currentGroup] });
+          }
           currentDate = dateLabel;
           currentGroup = [log];
         } else {
@@ -464,25 +613,38 @@ const HistoryPage = React.memo(
         }
       });
 
-      if (currentGroup.length > 0) groups.push({ title: currentDate, data: currentGroup });
+      if (currentGroup.length > 0) {
+        groups.push({ title: currentDate, data: currentGroup });
+      }
+      
       return groups;
     }, [activeLogs, category, searchQuery, simFilter, initialLoading, source]);
 
-    if (initialLoading && source === 'personal') {
+    if (initialLoading) {
       return (
         <View style={styles.pageContainer}>
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <View style={styles.centerContainer}>
             <BubbleLoader visible={true} />
+            <Text style={styles.loadingText}>
+              Loading {source === 'leads' ? 'lead' : 'personal'} calls...
+            </Text>
           </View>
         </View>
       );
     }
 
-    if (source === 'leads' && leadLogs.length === 0) {
+    if (activeLogs.length === 0) {
       return (
         <View style={styles.pageContainer}>
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <Text>No lead call logs found</Text>
+          <View style={styles.centerContainer}>
+            <Text style={styles.emptyText}>
+              No {source === 'leads' ? 'lead' : 'personal'} calls found
+            </Text>
+            <Text style={styles.emptySubtext}>
+              {source === 'leads' 
+                ? 'Calls from your leads will appear here' 
+                : 'Make or receive calls to see them here'}
+            </Text>
           </View>
         </View>
       );
@@ -492,14 +654,77 @@ const HistoryPage = React.memo(
       <View style={styles.pageContainer}>
         <FlatList
           data={groupedData}
-          keyExtractor={(item) => `${category}-${item.title}`}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
+          keyExtractor={(item) => `${source}-${category}-${item.title}-${item.data.length}`}
+          refreshControl={
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={onRefresh} 
+              colors={[colors.primary]} 
+              tintColor={colors.primary}
+            />
+          }
           renderItem={({ item }) => (
-            <View>
+            <View style={styles.sectionContainer}>
               <Text style={styles.sectionTitle}>{item.title}</Text>
-              {item.data.map((log) => (
-                <CallLogItem key={log.id} item={log} simCount={simCount} />
-              ))}
+              {item.data.map((log) => {
+                const displayLog = source === 'personal' 
+                  ? {
+                      ...log,
+                      name: log.name || log.phoneNumber || 'Unknown',
+                      leadName: log.leadName || log.name || log.phoneNumber || 'Unknown',
+                    }
+                  : log;
+                
+                // Determine which icons to show:
+                // - Add Lead: Show for personal logs that are NOT leads
+                // - Dispose: Show for lead logs OR personal logs that ARE leads
+                const isLead = !!(displayLog.leadId || displayLog.leadData);
+                const showAddLead = source === 'personal' && !isLead;
+                const showDispose = (source === 'leads') || (source === 'personal' && isLead);
+                
+                return (
+                  <CallLogItem 
+                    key={displayLog.id} 
+                    item={{
+                      ...displayLog,
+                      // Pass flags to help CallLogItem decide
+                      showAddLead,
+                      showDispose,
+                    }} 
+                    simCount={simCount}
+                    isLeadLog={showDispose} // This controls the avatar icon
+                    onAddLead={() => onAddLead(displayLog.phoneNumber)}
+                    onDispose={(callItem) => {
+                      console.log('📞 Dispose callback received for:', callItem.phoneNumber);
+                      
+                      if (callItem.leadData) {
+                        navigation.navigate('LeadDetails', { 
+                          lead: callItem.leadData,
+                          fromCall: true,
+                          callInfo: {
+                            id: callItem.id,
+                            duration: callItem.duration,
+                            timestamp: callItem.timestamp,
+                            phoneNumber: callItem.phoneNumber,
+                            recordingUrl: callItem.recordingUrl
+                          }
+                        });
+                      } else if (callItem.leadId) {
+                        navigation.navigate('LeadDetails', { 
+                          leadId: callItem.leadId,
+                          fromCall: true,
+                          phoneNumber: callItem.phoneNumber
+                        });
+                      } else {
+                        navigation.navigate('LeadDetails', { 
+                          phoneNumber: callItem.phoneNumber,
+                          fromCall: true 
+                        });
+                      }
+                    }}
+                  />
+                );
+              })}
             </View>
           )}
           contentContainerStyle={styles.listContent}
@@ -538,6 +763,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
   headerTitle: {
     fontSize: 24,
@@ -577,7 +804,7 @@ const styles = StyleSheet.create({
     color: colors.black,
   },
   allSimsIcon: {
-    width: 24,
+    width: 24, 
     height: 24,
     position: 'relative',
     justifyContent: 'center',
@@ -619,15 +846,18 @@ const styles = StyleSheet.create({
   sourceOptionTextActive: {
     color: 'white',
   },
+  sectionContainer: {
+    marginBottom: 16,
+  },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: colors.textSecondary,
     paddingHorizontal: 16,
     marginBottom: 8,
     marginTop: 16,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   listContent: {
     paddingHorizontal: 16,
@@ -637,4 +867,31 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     alignItems: 'center',
   },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+    paddingVertical: 100,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  emptySubtext: {
+    marginTop: 8, 
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  }, 
 });
+
+export default HistoryScreen;
