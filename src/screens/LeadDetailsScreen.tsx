@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -11,18 +12,19 @@ import {
   TextInput,
   PermissionsAndroid,
   NativeModules,
-  NativeEventEmitter
+  NativeEventEmitter,
+  Modal,
+  Linking
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { ArrowLeft, RefreshCw, PenSquare, ChevronUp, ChevronDown } from 'lucide-react-native';
+import { ArrowLeft, RefreshCw, PenSquare, ChevronUp, ChevronDown, MessageSquare, Mail, Phone, Calendar as CalendarIcon } from 'lucide-react-native';
 import { colors } from '../theme/colors';
 import { Lead } from '../types/Lead';
 import RNFS from 'react-native-fs';
 import { CallLogService } from '../services/CallLogService';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { LeadsService } from '../services/LeadsService';
-
+import { LeadsService } from '../services/LeadsService'; import { useAuth } from '../context/AuthContext';
 // import AudioRecorderPlayer from 'react-native-audio-recorder-player'; // REMOVED
 
 
@@ -48,26 +50,57 @@ export const LeadDetailsScreen = () => {
 
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { lead } = route.params as { lead: Lead };
-  const [activeTab, setActiveTab] = useState<Tab>('LEAD_INFO');
+  const { lead, openDispose } = route.params as { lead: Lead; openDispose?: boolean };
+  const [activeTab, setActiveTab] = useState<Tab>(openDispose ? 'DISPOSE_LEAD' : 'LEAD_INFO');
   const [subTab, setSubTab] = useState<'About' | 'Timeline'>('About');
+
+  // Modal state
+  const [callDisposeModalVisible, setCallDisposeModalVisible] = useState(false);
 
   // Collapse states for sections
   const [basicDetailsOpen, setBasicDetailsOpen] = useState(true);
   const [progressOpen, setProgressOpen] = useState(true);
 
+  useEffect(() => {
+    if (openDispose) {
+      setCallDisposeModalVisible(true);
+    }
+  }, [openDispose]);
+
   // Recording state removed, managed natively
 
 
   // Dispose Form State
+  const { user } = useAuth(); // Get logged in user for message template
   const [connected, setConnected] = useState<boolean | null>(null);
   const [disposeStatus, setDisposeStatus] = useState('');
-  const [description, setDescription] = useState('');
+  const [notConnectedReason, setNotConnectedReason] = useState('');
+  const [description, setDescription] = useState(''); // Remarks
   const [expectedValue, setExpectedValue] = useState('');
   const [followUpDate, setFollowUpDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastRecordingPath, setLastRecordingPath] = useState<string | null>(null);
+
+  // New State for Dispose Flow
+  const [nextActionType, setNextActionType] = useState(''); // '1h', '6h', '1d', 'custom'
+  const [reassign, setReassign] = useState(false);
+  const [copyToCampaign, setCopyToCampaign] = useState(false);
+  const [moveToCampaign, setMoveToCampaign] = useState(false);
+  const [whatsappModalVisible, setWhatsappModalVisible] = useState(false);
+
+  const NOT_CONNECTED_REASONS = [
+    "Did not pick",
+    "Busy in another call",
+    "User disconnected the call",
+    "Switch off",
+    "Out of Coverage area / Network issue",
+    "Call not connected / can not be completed",
+    "Other reason",
+    "Incorrect / Invalid number",
+    "Incoming calls not available",
+    "Number not in use / does not exists / out of service"
+  ];
 
   const checkPermissions = async () => {
     if (Platform.OS === 'android') {
@@ -105,9 +138,16 @@ export const LeadDetailsScreen = () => {
     // 2. Check Permissions
     const hasPermission = await checkPermissions();
     if (hasPermission) {
+      try {
+        // Store pending call state so we can resume to dispose screen if app restarts
+        await AsyncStorage.setItem('pendingDisposeLead', JSON.stringify(lead));
+      } catch (e) {
+        console.error("Failed to save pending call state", e);
+      }
+
       PhoneModule.startCallListener(); // Ensure listener is active
       PhoneModule.makeCall(lead.phone || lead.number);
-      navigation.navigate('CallScreen', { number: lead.phone || lead.number, name: getLeadName() });
+      // Navigation to CallScreen removed as per request - direct dialing only
     } else {
       Alert.alert("Permission Error", "Call permission is required");
     }
@@ -122,26 +162,39 @@ export const LeadDetailsScreen = () => {
         setLastRecordingPath(recPath);
       }
 
-      // Auto switch to Dispose
-      Alert.alert("Call Ended", "Proceed to dispose lead?", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Yes", onPress: () => {
-            setActiveTab('DISPOSE_LEAD');
-            // If we had the recording path here, we could potentially set it in state 
-            // to ensure it's passed when CallSummary screen is opened (if it is opened from here).
-            // However, CallSummaryScreen is likely a separate navigation or a modal. 
-            // If LeadDetailsScreen handles the "Dispose" form, then we just need to ensure 
-            // handleProceed uses the updated 'lastRecordingPath'.
+      // Auto switch to Dispose directly
+      setActiveTab('DISPOSE_LEAD');
+      setCallDisposeModalVisible(true);
+    });
+
+    // AppState listener to handle resume after call
+    const appStateSubscription = AppState.addEventListener('change', async (nextAppState) => {
+      if (nextAppState === 'active') {
+        try {
+          // Check if we have a pending dispose for THIS lead
+          const pendingLeadJson = await AsyncStorage.getItem('pendingDisposeLead');
+          if (pendingLeadJson) {
+            const pendingLead = JSON.parse(pendingLeadJson);
+            // Use loose comparison or check both ID fields just in case
+            const currentId = lead._id || lead.id;
+            const pendingId = pendingLead._id || pendingLead.id;
+
+            if (currentId && pendingId && currentId === pendingId) {
+              setActiveTab('DISPOSE_LEAD');
+              setCallDisposeModalVisible(true);
+            }
           }
+        } catch (e) {
+          console.error("Error checking pending dispose on resume", e);
         }
-      ]);
+      }
     });
 
     return () => {
       subscription.remove();
+      appStateSubscription.remove();
     };
-  }, []);
+  }, [lead]);
 
   // ... render ...
 
@@ -279,7 +332,15 @@ export const LeadDetailsScreen = () => {
           </View>
           <DetailRow label="Lead Source" value={lead.leadSource || '-'} />
           <DetailRow label="Follow-Up Date" value={lead.next_followup_date ? new Date(lead.next_followup_date).toLocaleDateString() : (lead.followUpDate || '-')} />
-          <DetailRow label="Assigned To" value={lead.assigned_to || lead.assignedUser || '-'} />
+          <DetailRow
+            label="Assigned To"
+
+            value={
+              (typeof lead.assigned_to === 'object' && lead.assigned_to !== null ? (lead.assigned_to as any).name : lead.assigned_to) ||
+              (typeof lead.assignedUser === 'object' && lead.assignedUser !== null ? (lead.assignedUser as any).name : lead.assignedUser) ||
+              '-'
+            }
+          />
           {lead.stage && <DetailRow label="Stage" value={lead.stage} />}
           {lead.tag && <DetailRow label="Tag" value={lead.tag} />}
           {lead.dealAmount && <DetailRow label="Deal Amount" value={lead.dealAmount} />}
@@ -308,6 +369,7 @@ export const LeadDetailsScreen = () => {
     } catch (e) {
       console.error("Error fetching logs", e);
       return null;
+      // return { duration: 0, timestamp: Date.now() }; // Fallback
     }
   };
 
@@ -316,47 +378,46 @@ export const LeadDetailsScreen = () => {
       Alert.alert("Error", "Please select if the call was connected.");
       return;
     }
-    if (!disposeStatus) {
-      Alert.alert("Error", "Please select a status.");
+    // If connected=false, check notConnectedReason
+    if (!connected && !notConnectedReason) {
+      Alert.alert("Error", "Please specify the reason.");
       return;
     }
 
     setIsProcessing(true);
     try {
-      const matchedCall = await fetchTodayCallLog();
+      // const matchedCall = await fetchTodayCallLog(); // Optional check
 
       const formData = {
         connected,
-        status: disposeStatus,
+        status: connected ? 'Connected' : notConnectedReason, // Use reason as status if not connected? Or use specific statuses
         description,
-        expectedValue,
+        nextActionType,
         followUpDate: followUpDate.toISOString(),
+        reassign,
+        copyToCampaign,
+        moveToCampaign
       };
 
-      // Find if there is a recorded file from this session
-      // We might want to pass the recording path if we just finished a call
-      // For now, rely on matching call log or existing logic
+      // In real implementation, we would save the dispose data here via API
+      // await LeadsService.submitDispose(lead._id, formData);
 
-      navigation.navigate('CallSummary', {
-        leadId: lead._id || lead.id,
-        leadName: getLeadName(),
-        formData,
-        callLog: matchedCall ? {
-          duration: matchedCall.duration,
-          timestamp: matchedCall.timestamp,
-          recordingPath: lastRecordingPath // Pass the recorded file path
-        } : (lastRecordingPath ? {
-          duration: 0, // Duration will be handled in summary if needed or from logs
-          timestamp: Date.now(),
-          recordingPath: lastRecordingPath
-        } : null)
-      });
+      console.log("Submitting Dispose:", formData);
+
+      // Simulate API call
+      setTimeout(() => {
+        Alert.alert("Success", "Lead disposed successfully");
+        setCallDisposeModalVisible(false);
+        navigation.goBack();
+      }, 1000);
 
     } catch (e) {
       console.error(e);
       Alert.alert("Error", "Something went wrong.");
     } finally {
       setIsProcessing(false);
+      // Clear pending state upon successful dispose/proceed
+      AsyncStorage.removeItem('pendingDisposeLead').catch(err => console.error(err));
     }
   };
 
@@ -366,19 +427,29 @@ export const LeadDetailsScreen = () => {
     setFollowUpDate(currentDate);
   };
 
+  const handleQuickTimeAction = (hours: number) => {
+    const d = new Date();
+    d.setHours(d.getHours() + hours);
+    setFollowUpDate(d);
+    // Set type based on time for UI state
+    if (hours === 1) setNextActionType('1h');
+    else if (hours === 6) setNextActionType('6h');
+    else if (hours === 24) setNextActionType('1d');
+  };
+
   const renderDisposeContent = () => (
     <View style={styles.disposeContainer}>
       <View style={styles.card}>
         <Text style={styles.question}>Was call connected?</Text>
         <View style={styles.btnRow}>
           <TouchableOpacity
-            style={[styles.choiceBtn, connected === false && styles.choiceBtnSelected]}
+            style={[styles.choiceBtn, connected === false && { backgroundColor: '#FF5252', borderColor: '#FF5252' }]}
             onPress={() => setConnected(false)}
           >
-            <Text style={[styles.choiceText, connected === false && styles.choiceTextSelected]}>Not Connected</Text>
+            <Text style={[styles.choiceText, connected === false && { color: 'white' }]}>Not Connected</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.choiceBtn, connected === true && styles.choiceBtnSelected, connected === true && { backgroundColor: '#4CAF50', borderColor: '#4CAF50' }]}
+            style={[styles.choiceBtn, connected === true && { backgroundColor: '#4CAF50', borderColor: '#4CAF50' }]}
             onPress={() => setConnected(true)}
           >
             <Text style={[styles.choiceText, connected === true && { color: 'white' }]}>Yes Connected</Text>
@@ -386,64 +457,137 @@ export const LeadDetailsScreen = () => {
         </View>
       </View>
 
-      {(connected !== null) && (
+      {/* Logic: if NOT connected, show reasons. If connected, maybe show dispositions? 
+          Based on screenshot 1, "Not Connected" is selected and reasons are shown.
+          Based on screenshot 2, assuming "Connected" uses the "Select next action".
+          Let's assume "Select next action" is always visible or depends on previous connection type.
+          Screenshot 2 title is just "Select next action", seems like it follows up.
+      */}
+
+      {!connected && connected !== null && (
         <View style={styles.card}>
-          {connected ? (
-            <>
-              <Text style={styles.inputLabel}>Description</Text>
-              <TextInput
-                style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-                placeholder="Enter call discussion..."
-                value={description}
-                onChangeText={setDescription}
-                multiline
-              />
-
-              <Text style={styles.inputLabel}>Expected Value</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0.00"
-                value={expectedValue}
-                onChangeText={setExpectedValue}
-                keyboardType="numeric"
-              />
-            </>
-          ) : null}
-
-          <Text style={styles.inputLabel}>Status</Text>
-          <View style={styles.statusGrid}>
-            {Object.values(LEAD_STATUS).map((s) => (
-              <TouchableOpacity
-                key={s}
-                style={[styles.statusOption, disposeStatus === s && styles.statusOptionSelected]}
-                onPress={() => setDisposeStatus(s)}
-              >
-                <Text style={[styles.statusTextOption, disposeStatus === s && { color: colors.primary, fontWeight: 'bold' }]}>
-                  {s.toUpperCase().replace('_', ' ')}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.inputLabel}>Follow Up Date</Text>
-          <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateBtn}>
-            <Text style={styles.dateText}>{followUpDate.toDateString()}</Text>
-          </TouchableOpacity>
-          {showDatePicker && (
-            <DateTimePicker
-              testID="dateTimePicker"
-              value={followUpDate}
-              mode="date"
-              display="default"
-              onChange={onDateChange}
-            />
-          )}
-
-          <TouchableOpacity style={styles.proceedBtn} onPress={handleProceed} disabled={isProcessing}>
-            <Text style={styles.proceedText}>{isProcessing ? "Processing..." : "Proceed to Summary"}</Text>
-          </TouchableOpacity>
+          <Text style={styles.question}>Please specify the reason?<Text style={{ color: 'red' }}>*</Text></Text>
+          {NOT_CONNECTED_REASONS.map((r, i) => (
+            <TouchableOpacity key={i} style={styles.radioRow} onPress={() => setNotConnectedReason(r)}>
+              <View style={[styles.radioOuter, notConnectedReason === r && { borderColor: colors.primary }]}>
+                {notConnectedReason === r && <View style={styles.radioInner} />}
+              </View>
+              <Text style={styles.radioLabel}>{r}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
+
+      {/* Next Action & Remarks - Assuming this is standard for both or mainly connected? 
+          Screenshot 2 shows "Select next action" with time pills. 
+          Usually we schedule follow up even if not connected or connected.
+      */}
+      <View style={styles.card}>
+        <Text style={styles.question}>Select next action</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 15 }}>
+          <TouchableOpacity
+            style={[styles.timePill, nextActionType === '1h' && styles.timePillActive]}
+            onPress={() => handleQuickTimeAction(1)}
+          >
+            <Text style={[styles.timePillText, nextActionType === '1h' && styles.timePillTextActive]}>1 hour</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.timePill, nextActionType === '6h' && styles.timePillActive]}
+            onPress={() => handleQuickTimeAction(6)}
+          >
+            <Text style={[styles.timePillText, nextActionType === '6h' && styles.timePillTextActive]}>6 hour</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.timePill, nextActionType === '1d' && styles.timePillActive]}
+            onPress={() => handleQuickTimeAction(24)}
+          >
+            <Text style={[styles.timePillText, nextActionType === '1d' && styles.timePillTextActive]}>1 day</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={styles.datePickerBtn}
+          onPress={() => setShowDatePicker(true)}
+        >
+          <Text style={styles.datePickerText}>Pick date & time</Text>
+          <CalendarIcon size={20} color="#666" />
+        </TouchableOpacity>
+        {showDatePicker && (
+          <DateTimePicker
+            testID="dateTimePicker"
+            value={followUpDate}
+            mode="date" // or datetime if supported by platform/lib config
+            display="default"
+            onChange={onDateChange}
+          />
+        )}
+
+        {/* Checkboxes */}
+        <View style={{ marginTop: 15 }}>
+          <TouchableOpacity style={styles.checkRow} onPress={() => setReassign(!reassign)}>
+            <View style={[styles.checkBox, reassign && styles.checkBoxActive]}>
+              {reassign && <View style={styles.checkmark} />}
+            </View>
+            <Text style={styles.checkLabel}>Re-assign this lead?{"\n"}(NOV LEADS (R))</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.checkRow} onPress={() => setCopyToCampaign(!copyToCampaign)}>
+            <View style={[styles.checkBox, copyToCampaign && styles.checkBoxActive]}>
+              {copyToCampaign && <View style={styles.checkmark} />}
+            </View>
+            <Text style={styles.checkLabel}>Copy this lead to other campaign</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.checkRow} onPress={() => setMoveToCampaign(!moveToCampaign)}>
+            <View style={[styles.checkBox, moveToCampaign && styles.checkBoxActive]}>
+              {moveToCampaign && <View style={styles.checkmark} />}
+            </View>
+            <Text style={styles.checkLabel}>Move this lead to other campaign</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={[styles.inputLabel, { marginTop: 15 }]}>Dispose Remark</Text>
+        <TextInput
+          style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+          placeholder="Type here..."
+          value={description}
+          onChangeText={setDescription}
+          multiline
+          maxLength={1500}
+        />
+        <Text style={{ textAlign: 'right', color: '#999', fontSize: 12 }}>{description.length}/1500</Text>
+      </View>
+
+      {/* Send Message Section */}
+      <View style={styles.card}>
+        <Text style={styles.question}>Send Message</Text>
+        <View style={styles.shareRow}>
+          <TouchableOpacity style={styles.shareItem}>
+            <View style={[styles.shareIcon, { borderColor: '#7E57C2' }]}>
+              <MessageSquare size={24} color="#7E57C2" />
+            </View>
+            <Text style={styles.shareText}>SMS</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.shareItem}>
+            <View style={[styles.shareIcon, { borderColor: '#7E57C2' }]}>
+              <Mail size={24} color="#7E57C2" />
+            </View>
+            <Text style={styles.shareText}>Email</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.shareItem} onPress={() => setWhatsappModalVisible(true)}>
+            <View style={[styles.shareIcon, { borderColor: '#7E57C2' }]}>
+              <Phone size={24} color="#7E57C2" />
+            </View>
+            <Text style={styles.shareText}>Whatsapp</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity style={styles.submitBtn} onPress={handleProceed} disabled={isProcessing}>
+          <Text style={styles.submitBtnText}>{isProcessing ? "Processing..." : "Submit"}</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -581,9 +725,119 @@ export const LeadDetailsScreen = () => {
           <Text style={styles.footerCallText}>Call Now</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Dispose Modal */}
+      <Modal
+        visible={callDisposeModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setCallDisposeModalVisible(false)} // Optional: prevent closing on back button if strict
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Call Disposition</Text>
+              <TouchableOpacity onPress={() => setCallDisposeModalVisible(false)}>
+                {/* Close Icon or Text */}
+                <Text style={{ fontSize: 20, color: '#333' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: '80%' }}>
+              {renderDisposeContent()}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* WhatsApp Modal */}
+      <Modal
+        visible={whatsappModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setWhatsappModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <SendTemplateMessageModal
+              lead={lead}
+              user={user}
+              onClose={() => setWhatsappModalVisible(false)}
+            />
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 };
+// Sub-component for Message Modal
+const SendTemplateMessageModal = ({ lead, user, onClose }: { lead: Lead, user: any, onClose: () => void }) => {
+  const leadName = lead.firstName || lead.name || "";
+  // User name from AuthContext (passed as prop)
+  const senderName = user?.name || "Team";
+
+  // Predefined message: "Hi [Lead Name], I tried reaching out to you! Feel free to call me back or message. Regards, [User Name]"
+  // If +91 added... "send using wa/+91 api but if +91 added then dont add if not added then add accordingly"
+
+  // Actually the message in screenshot is:
+  // "Hi Vaishali,\n\nI tried reaching out to you!\nFeel free to call me back or message.\n\nRegards, Shinde Sir"
+
+  const [message, setMessage] = useState(`Hi ${leadName},\n\nI tried reaching out to you!\nFeel free to call me back or message.\n\nRegards, ${senderName}`);
+
+  const handleSend = () => {
+    let phone = lead.phone || lead.number || "";
+    // Remove non-digits
+    phone = phone.replace(/[^0-9]/g, '');
+
+    // Check 91 logic
+    if (!phone.startsWith('91') && phone.length === 10) {
+      phone = '91' + phone;
+    }
+
+    const url = `whatsapp://send?phone=${phone}&text=${encodeURIComponent(message)}`;
+
+    Linking.canOpenURL(url).then(supported => {
+      if (supported) {
+        Linking.openURL(url);
+      } else {
+        Alert.alert("Error", "WhatsApp is not installed or invalid URL");
+      }
+    });
+  };
+
+  return (
+    <View style={{ width: '100%' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, borderBottomWidth: 1, borderBottomColor: '#EEE', paddingBottom: 10 }}>
+        <MessageSquare size={24} color="#5E35B1" style={{ marginRight: 8 }} />
+        <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#5E35B1' }}>Send message</Text>
+      </View>
+
+      <View style={{ backgroundColor: '#F3E5F5', padding: 15, borderRadius: 8, marginBottom: 15 }}>
+        <TextInput
+          value={message}
+          onChangeText={setMessage}
+          multiline
+          style={{ color: '#333', fontSize: 16, minHeight: 100, textAlignVertical: 'top' }}
+        />
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15 }}>
+        <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#5E35B1', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+          <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: '#5E35B1' }} />
+        </View>
+        <Text style={{ color: '#333', fontWeight: 'bold' }}>{lead.phone || lead.number}</Text>
+      </View>
+
+      <TouchableOpacity
+        onPress={handleSend}
+        style={{ backgroundColor: '#5E35B1', paddingVertical: 12, borderRadius: 8, alignItems: 'center' }}
+      >
+        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>Send</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 
 
 
@@ -748,6 +1002,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 20
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    maxHeight: '90%',
+    paddingBottom: 20,
+    elevation: 5
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEE'
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text
   },
   subTabActive: {
     borderBottomColor: '#4A148C',
@@ -1014,5 +1294,128 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     elevation: 2,
-  }
+  },
+  radioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  radioOuter: {
+    height: 20,
+    width: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#757575',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  radioInner: {
+    height: 10,
+    width: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
+  },
+  radioLabel: {
+    fontSize: 14,
+    color: colors.text,
+  },
+  timePill: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  timePillActive: {
+    borderColor: colors.primary,
+    backgroundColor: '#FFFDE7',
+  },
+  timePillText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  timePillTextActive: {
+    color: colors.primaryDark,
+    fontWeight: 'bold',
+  },
+  datePickerBtn: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    marginTop: 10,
+  },
+  datePickerText: {
+    fontSize: 14,
+    color: colors.text,
+  },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  checkBox: {
+    height: 20,
+    width: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#757575',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  checkBoxActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  checkmark: {
+    height: 10,
+    width: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 2,
+  },
+  checkLabel: {
+    fontSize: 14,
+    color: colors.text,
+    flex: 1,
+  },
+  shareRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  shareItem: {
+    alignItems: 'center',
+  },
+  shareIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  shareText: {
+    fontSize: 12,
+    color: colors.text,
+  },
+  submitBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  submitBtnText: {
+    color: colors.text,
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
 });

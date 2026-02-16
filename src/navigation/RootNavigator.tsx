@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -13,6 +14,7 @@ import { LeadDisposeScreen } from '../screens/LeadDisposeScreen';
 import { CallSummaryScreen } from '../screens/CallSummaryScreen';
 import { ServerDownScreen } from '../screens/ServerDownScreen';
 import { SessionExpiredScreen } from '../screens/SessionExpiredScreen';
+import { CampaignLeadsScreen } from '../screens/CampaignLeadsScreen';
 import { colors } from '../theme/colors';
 import { Phone, Users, BarChart2, Menu, UserPlus, Megaphone } from 'lucide-react-native';
 
@@ -107,7 +109,7 @@ const TabNavigator = () => {
           tabBarIcon: ({ color, size }) => <UserPlus color={color} size={size} />
         }}
       />
-      
+
       <Tab.Screen
         name="Analytics"
         component={CallAnalyticsScreen}
@@ -149,6 +151,30 @@ const RootContent = () => {
   const { user, loading, isFirstLaunch, isServerUp } = useAuth();
   // useAutoSync(); // Removed as per request
 
+  useEffect(() => {
+    const checkPendingDispose = async () => {
+      try {
+        const pendingLeadJson = await AsyncStorage.getItem('pendingDisposeLead');
+        if (pendingLeadJson && user && navigationRef.current) {
+          const lead = JSON.parse(pendingLeadJson);
+          // Navigate to LeadDetails with dispose tab open
+          // Resetting stack slightly to ensure back button works reasonably well
+          // or just navigate on top. Navigating on top is safer.
+          // We need a small delay to ensure navigation is mounted/ready if checking on mount
+          setTimeout(() => {
+            navigationRef.current?.navigate('LeadDetails', { lead, openDispose: true });
+          }, 500);
+        }
+      } catch (e) {
+        console.error("Checking pending dispose failed", e);
+      }
+    };
+
+    if (user && !loading) {
+      checkPendingDispose();
+    }
+  }, [user, loading]);
+
   if (loading) {
     return <SplashScreen />;
   }
@@ -186,6 +212,7 @@ const RootContent = () => {
           <>
             <Stack.Screen name="MainTabs" component={TabNavigator} />
             <Stack.Screen name="CallAnalytics" component={CallAnalyticsScreen} />
+            <Stack.Screen name="CampaignLeads" component={CampaignLeadsScreen} />
             <Stack.Screen name="ContactAnalytics" component={ContactAnalyticsScreen} />
             <Stack.Screen name="LeadDetails" component={LeadDetailsScreen} />
             <Stack.Screen name="LeadDispose" component={LeadDisposeScreen} />

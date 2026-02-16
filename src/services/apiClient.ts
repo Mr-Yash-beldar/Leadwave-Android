@@ -1,7 +1,8 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createNavigationContainerRef } from '@react-navigation/native';
 
-const BASE_URL = 'https://connect.leadvidya.in/api';
+const BASE_URL = 'http://192.168.1.14:5000/api';
 
 const apiClient = axios.create({
     baseURL: BASE_URL,
@@ -9,9 +10,9 @@ const apiClient = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
-}); 
+});
 
-apiClient.interceptors.request.use( 
+apiClient.interceptors.request.use(
     async (config) => {
         const token = await AsyncStorage.getItem('token');
         if (token) {
@@ -26,7 +27,7 @@ apiClient.interceptors.request.use(
 );
 
 // Helper to get navigation outside of components
-import { createNavigationContainerRef } from '@react-navigation/native';
+
 export const navigationRef = createNavigationContainerRef<any>();
 
 let logoutHandler: (() => void) | null = null;
