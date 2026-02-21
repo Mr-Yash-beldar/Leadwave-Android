@@ -22,6 +22,8 @@ import { CallLog, CallType } from '../types/CallLog';
 import { CallLogItem } from '../components/CallLogItem';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { LeadsService } from '../services/LeadsService';
+
 import { FilterBar } from '../components/FilterBar';
 import { SearchBar } from '../components/SearchBar';
 import { DialpadFab } from '../components/DialpadFab';
@@ -33,8 +35,55 @@ import { colors } from '../theme/colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CATEGORIES = ['all', 'incoming', 'outgoing', 'missed', 'rejected'];
+const POSTED_CALLS_KEY = 'posted_calls'; // AsyncStorage dedup key
 
 type SourceType = 'personal' | 'leads';
+
+/** Maps a native CallType to the backend API payload fields */
+const callPayloadFromLog = (log: CallLog) => {
+  switch (log.type) {
+    case CallType.Incoming:
+      return { callStatus: 'completed', callType: 'incoming' };
+    case CallType.Outgoing:
+      return { callStatus: 'completed', callType: 'outgoing' };
+    case CallType.Missed:
+      return { callStatus: 'missed', callType: 'missed' };
+    case CallType.Rejected:
+      return { callStatus: 'rejected', callType: 'missed' };
+    default:
+      return { callStatus: 'completed', callType: 'outgoing' };
+  }
+};
+
+/** Fire-and-forget: post a matched call to the DB, once per unique log ID */
+const autoPostMatchedCall = async (log: CallLog, leadId: string) => {
+  try {
+    // Load the dedup set
+    const raw = await AsyncStorage.getItem(POSTED_CALLS_KEY);
+    const postedSet: string[] = raw ? JSON.parse(raw) : [];
+    if (postedSet.includes(log.id)) {
+      console.log('Auto-post skipped (already posted):', log.id);
+      return;
+    }
+    console.log('Auto-posting call to DB:', leadId, log.id);
+    const { callStatus, callType } = callPayloadFromLog(log);
+    await LeadsService.postCallLog({
+      leadId,
+      callTime: new Date(log.timestamp).toISOString(),
+      durationSeconds: log.duration,
+      callStatus,
+      callType,
+      notes: 'incoming call auto dispose',
+    });
+    // Mark as posted
+    postedSet.push(log.id);
+    await AsyncStorage.setItem(POSTED_CALLS_KEY, JSON.stringify(postedSet));
+    console.log('Call posted to DB:', log.id);
+  } catch (e) {
+    console.warn('Auto-post failed (will retry next refresh):', e);
+  }
+};
+
 
 interface Lead {
   _id: string;
@@ -202,10 +251,9 @@ export const HistoryScreen: React.FC = () => {
       setSimCount(count);
       setDaysOffset(currentOffset);
 
-      // Format personal logs and check if they match any lead
+      // Format personal logs — match against leads, show name, auto-post to DB
       const formattedLogs = fetchedLogs.map(log => {
         const matchedLead = findLeadByNumber(log.phoneNumber);
-        // console.log(log.phoneNumber);
 
         const baseLog = {
           ...log,
@@ -213,12 +261,14 @@ export const HistoryScreen: React.FC = () => {
           leadName: log.name || log.phoneNumber || 'Unknown',
         };
 
-        // If matched with a lead, add lead data
+        // If matched with a lead, add lead data and auto-post to DB
         if (matchedLead) {
+          const leadId = matchedLead._id || matchedLead.id || '';
+          autoPostMatchedCall(log, leadId); // fire-and-forget
           return {
             ...baseLog,
             leadName: `${matchedLead.firstName} ${matchedLead.lastName}`.trim(),
-            leadId: matchedLead._id || matchedLead.id,
+            leadId,
             leadData: matchedLead,
             disposed: matchedLead.leadStatus === 'disposed'
           };
@@ -338,10 +388,12 @@ export const HistoryScreen: React.FC = () => {
           };
 
           if (matchedLead) {
+            const leadId = matchedLead._id || matchedLead.id || '';
+            autoPostMatchedCall(log, leadId); // fire-and-forget
             return {
               ...baseLog,
               leadName: `${matchedLead.firstName} ${matchedLead.lastName}`.trim(),
-              leadId: matchedLead._id || matchedLead.id,
+              leadId,
               leadData: matchedLead,
               disposed: matchedLead.leadStatus === 'disposed'
             };
@@ -529,7 +581,7 @@ export const HistoryScreen: React.FC = () => {
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Call History</Text>
+        <Text style={styles.headerTitle}>Call Logs</Text>
         <View style={styles.headerRight}>
           <TouchableOpacity
             onPress={() => setSimFilter('all')}

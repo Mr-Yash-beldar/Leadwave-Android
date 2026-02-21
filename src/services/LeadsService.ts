@@ -9,7 +9,7 @@ export const LeadsService = {
             const response = await apiClient.get<{ success: boolean; data: Lead[]; meta?: any }>('/leads/assigned', {
                 params: { page, limit }
             });
-            console.log('Response received:', response.data);
+            // console.log('Response received:', response.data);
             if (response.data.success) {
                 return response.data.data;
             }
@@ -40,6 +40,23 @@ export const LeadsService = {
             console.error('Error updating lead by salesperson:', error);
             throw error;
         }
+    },
+
+
+    /**
+     * Auto-posts a matched system call log to the backend.
+     * Token is added automatically by apiClient interceptor.
+     */
+    postCallLog: async (data: {
+        leadId: string;
+        callTime: string;        // ISO string
+        durationSeconds: number;
+        callStatus: string;      // "completed" | "missed" | "rejected"
+        callType: string;        // "incoming" | "outgoing" | "missed"
+        notes?: string;
+    }) => {
+        const response = await apiClient.post('/calls', data);
+        return response.data;
     },
 
     logCall: async (data: any) => {

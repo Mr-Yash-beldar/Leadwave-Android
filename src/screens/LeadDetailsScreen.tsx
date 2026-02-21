@@ -23,20 +23,34 @@ import RNFS from 'react-native-fs';
 import { CallLogService } from '../services/CallLogService';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LeadsService } from '../services/LeadsService';
+import { MessageCircle, MessageSquare } from 'lucide-react-native';
 
 // import AudioRecorderPlayer from 'react-native-audio-recorder-player'; // REMOVED
 
 
 const LEAD_STATUS = {
-  NEW: "new",
-  ASSIGNED: "assigned",
-  TRANSFERRED: "transferred",
-  DISPOSED: "disposed",
-  FOLLOW_UP: "follow_up",
-  APPROVED: "approved",
-  LOST: "lost",
-  CLOSED: "closed",
+  NEW: "New",
+  QUALIFIED: "Qualified",
+  FOLLOW_UP: "Followup",
+  DEMO_BOOKED: "Demo Booked",
+  DEMO_COMPLETED: "Demo Completed",
+  DEMO_RESCHEDULED: "Demo Rescheduled",
+  NIFC: "Not Interested for Full Course (NIFC)",
+  MAY_BE_BUY_LATER: "May be Buy Later",
+  POSITIVE: "Positive",
+  ENROLLED: "Enrolled",
 };
+
+const NOT_CONNECTED_REASONS = [
+  "Did not pick",
+  "Busy in another call",
+  "User disconnected the call",
+  "Switch off",
+  "Out of coverage",
+  " Wrong Number",
+  "Incomings not available",
+  "Not exist/ Number not in use / Out of service"
+];
 
 const { PhoneModule } = NativeModules;
 // Removed top-level instantiation to avoid constructor error
@@ -67,8 +81,12 @@ export const LeadDetailsScreen = () => {
   const [expectedValue, setExpectedValue] = useState('');
   const [followUpDate, setFollowUpDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastRecordingPath, setLastRecordingPath] = useState<string | null>(null);
+  const [timelineLogs, setTimelineLogs] = useState<any[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [expandedLogIndex, setExpandedLogIndex] = useState<number | null>(null);
 
   const checkPermissions = async () => {
     if (Platform.OS === 'android') {
@@ -151,8 +169,26 @@ export const LeadDetailsScreen = () => {
     };
   }, []);
 
-  // ... render ...
+  // Fetch timeline events from backend
+  useEffect(() => {
+    const fetchTimelineLogs = async () => {
+      if (!lead._id && !lead.id) return;
+      setTimelineLoading(true);
+      try {
+        const events = await CallLogService.getLeadTimeline(lead._id || lead.id || '');
+        // Backend events are already sorted newest-first
+        setTimelineLogs(events);
+      } catch (e) {
+        console.error('Timeline fetch error', e);
+      } finally {
+        setTimelineLoading(false);
+      }
+    };
+    fetchTimelineLogs();
+  }, [lead._id, lead.id]);
 
+  // // ... render ...
+  // console.log("lead", lead);
 
   const getLeadName = () => {
     if (lead.firstName || lead.lastName) {
@@ -169,7 +205,7 @@ export const LeadDetailsScreen = () => {
       >
         <Text style={styles.sectionTitle}>Basic Details</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <PenSquare size={16} color={colors.textSecondary} style={{ marginRight: 10 }} />
+          {/* <PenSquare size={16} color={colors.textSecondary} style={{ marginRight: 10 }} /> */}
           {basicDetailsOpen ? <ChevronUp size={20} color={colors.text} /> : <ChevronDown size={20} color={colors.text} />}
         </View>
       </TouchableOpacity>
@@ -272,7 +308,7 @@ export const LeadDetailsScreen = () => {
       >
         <Text style={styles.sectionTitle}>Lead Progress</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <PenSquare size={16} color={colors.textSecondary} style={{ marginRight: 10 }} />
+          {/* <PenSquare size={16} color={colors.textSecondary} style={{ marginRight: 10 }} /> */}
           {progressOpen ? <ChevronUp size={20} color={colors.text} /> : <ChevronDown size={20} color={colors.text} />}
         </View>
       </TouchableOpacity>
@@ -280,7 +316,7 @@ export const LeadDetailsScreen = () => {
       {progressOpen && (
         <View style={styles.sectionContent}>
           <View style={styles.row}>
-            <Text style={styles.label}>Status:</Text>
+            <Text style={styles.label}>Stage:</Text>
             <View style={styles.statusBadge}>
               <Text style={styles.statusText}>{lead.leadStatus || lead.status || 'New'}</Text>
             </View>
@@ -290,7 +326,7 @@ export const LeadDetailsScreen = () => {
           <DetailRow
             label="Assigned To"
             value={
-              (typeof lead.assigned_to === 'object' && lead.assigned_to !== null ? (lead.assigned_to as any).name || (lead.assigned_to as any).username : lead.assigned_to) ||
+              (typeof lead.assigned_to === 'object' && lead.assigned_to.name !== null ? (lead.assigned_to as any).name || (lead.assigned_to as any).username : lead.assigned_to) ||
               (typeof lead.assignedUser === 'object' && lead.assignedUser !== null ? (lead.assignedUser as any).name || (lead.assignedUser as any).username : lead.assignedUser) ||
               '-'
             }
@@ -379,6 +415,37 @@ export const LeadDetailsScreen = () => {
     const currentDate = selectedDate || followUpDate;
     setShowDatePicker(Platform.OS === 'ios');
     setFollowUpDate(currentDate);
+    if (Platform.OS === 'android') {
+      setShowTimePicker(true);
+    }
+  };
+
+  const onTimeChange = (event: any, selectedDate?: Date) => {
+    const currentDate = selectedDate || followUpDate;
+    setShowTimePicker(Platform.OS === 'ios');
+    setFollowUpDate(currentDate);
+  };
+
+  const handleSendMessage = () => {
+    const message = connected
+      ? "Thanks for connecting if any issue call this number or msg"
+      : `Hello ${getLeadName()},
+      ${typeof lead.assigned_to === 'object' && lead.assigned_to.name !== null ? (lead.assigned_to as any).name : lead.assigned_to} from this side from YD Baba Organisation, I am trying to connect with you but not able to connect please let me know when you are available to connect over the call`;
+
+    Linking.openURL(`sms:${lead.phone || lead.number}?body=${message}`);
+  };
+
+  const handleSendWhatsApp = () => {
+    const message = connected
+      ? "Thanks for connecting if any issue call this number or msg"
+      : `Hello ${getLeadName()},
+      ${typeof lead.assigned_to === 'object' && lead.assigned_to.name !== null ? (lead.assigned_to as any).name : lead.assigned_to} from this side from YD Baba Organisation, I am trying to connect with you but not able to connect please let me know when you are available to connect over the call`;
+
+
+    const rawPhone = lead.phone || lead.number || '';
+    const phone = rawPhone.startsWith('+91') ? rawPhone : `+91${rawPhone}`;
+
+    Linking.openURL(`whatsapp://send?phone=${phone}&text=${message}`);
   };
 
   const renderDisposeContent = () => (
@@ -388,13 +455,13 @@ export const LeadDetailsScreen = () => {
         <View style={styles.btnRow}>
           <TouchableOpacity
             style={[styles.choiceBtn, connected === false && styles.choiceBtnSelected]}
-            onPress={() => setConnected(false)}
+            onPress={() => { setConnected(false); setDisposeStatus(''); }} // Clear status on toggle
           >
             <Text style={[styles.choiceText, connected === false && styles.choiceTextSelected]}>Not Connected</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.choiceBtn, connected === true && styles.choiceBtnSelected, connected === true && { backgroundColor: '#4CAF50', borderColor: '#4CAF50' }]}
-            onPress={() => setConnected(true)}
+            onPress={() => { setConnected(true); setDisposeStatus(''); }}
           >
             <Text style={[styles.choiceText, connected === true && { color: 'white' }]}>Yes Connected</Text>
           </TouchableOpacity>
@@ -403,8 +470,36 @@ export const LeadDetailsScreen = () => {
 
       {(connected !== null) && (
         <View style={styles.card}>
+
+          {/* Messaging Options */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 }}>
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#25D366' }]} onPress={handleSendWhatsApp}>
+              <MessageCircle color="white" size={20} />
+              <Text style={styles.actionBtnText}>WhatsApp</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#2196F3' }]} onPress={handleSendMessage}>
+              <MessageSquare color="white" size={20} />
+              <Text style={styles.actionBtnText}>Message</Text>
+            </TouchableOpacity>
+          </View>
+
           {connected ? (
             <>
+              <Text style={styles.inputLabel}>Stages</Text>
+              <View style={styles.statusGrid}>
+                {Object.values(LEAD_STATUS).map((s) => (
+                  <TouchableOpacity
+                    key={s}
+                    style={[styles.statusOption, disposeStatus === s && styles.statusOptionSelected]}
+                    onPress={() => setDisposeStatus(s)}
+                  >
+                    <Text style={[styles.statusTextOption, disposeStatus === s && { color: colors.primary, fontWeight: 'bold' }]}>
+                      {s.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
               <Text style={styles.inputLabel}>Description</Text>
               <TextInput
                 style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
@@ -423,27 +518,46 @@ export const LeadDetailsScreen = () => {
                 keyboardType="numeric"
               />
             </>
-          ) : null}
+          ) : (
+            <>
+              <Text style={styles.inputLabel}>Reason</Text>
+              <View style={styles.statusGrid}>
+                {NOT_CONNECTED_REASONS.map((s) => (
 
-          <Text style={styles.inputLabel}>Status</Text>
-          <View style={styles.statusGrid}>
-            {Object.values(LEAD_STATUS).map((s) => (
-              <TouchableOpacity
-                key={s}
-                style={[styles.statusOption, disposeStatus === s && styles.statusOptionSelected]}
-                onPress={() => setDisposeStatus(s)}
-              >
-                <Text style={[styles.statusTextOption, disposeStatus === s && { color: colors.primary, fontWeight: 'bold' }]}>
-                  {s.toUpperCase().replace('_', ' ')}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                  <TouchableOpacity
+                    key={s}
+                    style={[
+                      styles.statusOption,
+                      disposeStatus === s && styles.statusOptionSelected,
+                      { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-start' }
+                    ]}
+                    onPress={() => setDisposeStatus(s)}
+                  >
+                    <View style={styles.radioCircle}>
+                      {disposeStatus === s && <View style={styles.radioInner} />}
+                    </View>
+                    <Text style={[styles.radioText, { marginLeft: 8 }]}>{s}</Text>
+                  </TouchableOpacity>
 
-          <Text style={styles.inputLabel}>Follow Up Date</Text>
+                ))}
+              </View >
+
+              <Text style={styles.inputLabel}>Dispose Remark</Text>
+              <TextInput
+                style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
+                placeholder="Enter remark..."
+                value={description}
+                onChangeText={setDescription}
+                multiline
+              />
+            </>
+          )}
+
+          <Text style={styles.inputLabel}>Follow Up Date & Time</Text>
           <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateBtn}>
-            <Text style={styles.dateText}>{followUpDate.toDateString()}</Text>
+            <Text style={styles.dateText}>{followUpDate.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</Text>
           </TouchableOpacity>
+
           {showDatePicker && (
             <DateTimePicker
               testID="dateTimePicker"
@@ -451,6 +565,16 @@ export const LeadDetailsScreen = () => {
               mode="date"
               display="default"
               onChange={onDateChange}
+            />
+          )}
+
+          {showTimePicker && (
+            <DateTimePicker
+              testID="timePicker"
+              value={followUpDate}
+              mode="time"
+              display="default"
+              onChange={onTimeChange}
             />
           )}
 
@@ -504,6 +628,7 @@ export const LeadDetailsScreen = () => {
               </TouchableOpacity>
             </View>
 
+
             <ScrollView style={styles.scrollContent}>
               {subTab === 'About' ? (
                 <>
@@ -514,69 +639,127 @@ export const LeadDetailsScreen = () => {
                 </>
               ) : (
                 <View style={styles.timelineContainer}>
-                  {/* Create "Lead Created" event */}
-                  <View style={styles.timelineItem}>
-                    <View style={styles.timelineLeft}>
-                      <View style={styles.timelineLine} />
-                      <View style={[styles.timelineDot, { backgroundColor: colors.primary }]} />
-                    </View>
-                    <View style={styles.timelineContent}>
-                      <Text style={styles.timelineTitle}>Lead Created</Text>
-                      <Text style={styles.timelineDate}>
-                        {new Date(lead.created || lead.createdAt || Date.now()).toLocaleString()}
-                      </Text>
-                      <Text style={styles.timelineDesc}>Lead was added to the system.</Text>
-                    </View>
+                  {/* Header */}
+                  <View style={styles.tlHeader}>
+                    <Text style={styles.tlHeaderText}>Activities</Text>
                   </View>
 
-                  {/* Unified Timeline of Notes and Call Logs */}
+                  {timelineLoading && (
+                    <Text style={{ color: colors.textSecondary, marginBottom: 12, textAlign: 'center' }}>Loading history...</Text>
+                  )}
+
+                  {/* Build unified event list from backend + lead created */}
                   {(() => {
-                    const noteEvents = (lead.notes || []).map((note: any) => {
-                      const noteDate = note.date || note.createdAt || note.timestamp || Date.now();
-                      const noteDesc = typeof note === 'string' ? note : (note.note || note.description || 'Note added');
-                      return {
-                        type: 'NOTE',
-                        date: new Date(noteDate),
-                        title: 'Note Added',
-                        desc: typeof noteDesc === 'object' ? JSON.stringify(noteDesc) : noteDesc,
-                        color: colors.secondary
-                      };
+                    // Append a local "Lead Created" event at the end (backend doesn't include it)
+                    const createdDate = new Date(lead.created || lead.createdAt || Date.now());
+                    const createdSource = lead.leadSource || 'System';
+
+                    const allEvts: any[] = [
+                      ...timelineLogs, // already sorted newest-first by backend
+                      { kind: 'CREATED', date: createdDate.toISOString(), timestamp: createdDate.getTime(), source: createdSource },
+                    ];
+
+                    // Helper: date badge string
+                    const dateBadge = (d: Date) =>
+                      d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                    let lastBadge = '';
+
+                    return allEvts.map((evt: any, i: number) => {
+                      const evtDate = new Date(evt.date || evt.timestamp);
+                      const badge = dateBadge(evtDate);
+                      const showBadge = badge !== lastBadge;
+                      lastBadge = badge;
+                      const isLast = i === allEvts.length - 1;
+
+                      if (evt.kind === 'CALL') {
+                        const expanded = expandedLogIndex === i;
+                        // Icon colour: grey for not_connected, red for missed, green for answered
+                        const isNotConnected = (evt.label || '').toLowerCase().includes('not_connected') || (evt.label || '').toLowerCase().includes('not connected');
+                        const iconBg = isNotConnected ? '#9E9E9E' : evt.isMissed ? '#F44336' : '#4CAF50';
+                        return (
+                          <View key={`call-${evt.logId || i}`} style={styles.tlRow}>
+                            <View style={styles.tlDateCol}>
+                              {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
+                            </View>
+                            <View style={styles.tlSpineCol}>
+                              {!isLast && <View style={styles.tlSpineLine} />}
+                              <View style={[styles.tlIconCircle, { backgroundColor: iconBg }]}>
+                                <Text style={{ color: 'white', fontSize: 16 }}>📞</Text>
+                              </View>
+                            </View>
+                            <TouchableOpacity
+                              style={[styles.tlCard, expanded && styles.tlCardExpanded]}
+                              onPress={() => setExpandedLogIndex(expanded ? null : i)}
+                              activeOpacity={0.8}
+                            >
+                              <View style={styles.tlCardRow}>
+                                <Text style={styles.tlCallLabel}>{evt.label} | {evt.timeStr}</Text>
+                                <Text style={styles.tlChevron}>{expanded ? '▲' : '▼'}</Text>
+                              </View>
+                              {expanded && (
+                                <View style={styles.tlExpanded}>
+                                  <View style={styles.tlDetailRow}>
+                                    <Text style={styles.tlDetailLabel}>Call Duration</Text>
+                                    <Text style={styles.tlDetailValue}>{evt.durStr}</Text>
+                                  </View>
+                                  {evt.addedBy && (
+                                    <View style={styles.tlDetailRow}>
+                                      <Text style={styles.tlDetailLabel}>Agent</Text>
+                                      <Text style={styles.tlDetailValue}>{evt.addedBy}</Text>
+                                    </View>
+                                  )}
+                                </View>
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      }
+
+                      if (evt.kind === 'NOTE') {
+                        return (
+                          <View key={`note-${evt.noteId || i}`} style={styles.tlRow}>
+                            <View style={styles.tlDateCol}>
+                              {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
+                            </View>
+                            <View style={styles.tlSpineCol}>
+                              {!isLast && <View style={styles.tlSpineLine} />}
+                              <View style={[styles.tlIconCircle, { backgroundColor: '#FF9800' }]}>
+                                <Text style={{ color: 'white', fontSize: 14 }}>📝</Text>
+                              </View>
+                            </View>
+                            <View style={styles.tlCard}>
+                              <Text style={styles.tlNoteTitle}>Note Added</Text>
+                              <Text style={styles.tlNoteDesc}>{evt.desc}</Text>
+                              {evt.addedBy && <Text style={styles.tlAddedBy}>Added by: {evt.addedBy}</Text>}
+                            </View>
+                          </View>
+                        );
+                      }
+
+                      // CREATED
+                      return (
+                        <View key={`created-${i}`} style={styles.tlRow}>
+                          <View style={styles.tlDateCol}>
+                            {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
+                          </View>
+                          <View style={styles.tlSpineCol}>
+                            <View style={[styles.tlIconCircle, { backgroundColor: '#9C27B0' }]}>
+                              <Text style={{ color: 'white', fontSize: 16 }}>👤</Text>
+                            </View>
+                          </View>
+                          <View style={styles.tlCard}>
+                            <Text style={styles.tlCallLabel}>Lead Created | Source: {evt.source}</Text>
+                            <Text style={styles.tlAddedBy}>{evtDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                          </View>
+                        </View>
+                      );
                     });
-
-                    // Mock Call Logs (In real app, fetch efficiently. Here we filter sync or assume fetched)
-                    // Since fetchTodayCallLog is async and scoped, we might need to fetch all logs on mount.
-                    // For this step, we will use a separate effect to fetch logs or just assume we have them if passed.
-                    // FIXME: To properly show call history for *this* lead, we need to fetch calls. 
-                    // For now, let's just integrate the structure. A real fetch would require state.
-
-                    // Placeholder for actual call logs if they were in state.
-                    // Assuming we might have some mocked or passed logs/history for now.
-                    const callEvents: { type: string; date: Date; title: string; desc: string; color: string; }[] = [];
-
-                    // Merge and sort
-                    const allEvents = [...noteEvents, ...callEvents].sort((a, b) => b.date.getTime() - a.date.getTime());
-
-                    return allEvents.map((event, index) => (
-                      <View key={index} style={styles.timelineItem}>
-                        <View style={styles.timelineLeft}>
-                          <View style={styles.timelineLine} />
-                          <View style={[styles.timelineDot, { backgroundColor: event.color }]} />
-                        </View>
-                        <View style={styles.timelineContent}>
-                          <Text style={styles.timelineTitle}>{event.title}</Text>
-                          <Text style={styles.timelineDate}>{event.date.toLocaleString()}</Text>
-                          <Text style={styles.timelineDesc}>{event.desc}</Text>
-                        </View>
-                      </View>
-                    ));
                   })()}
-
-                  {/* Call History Section (As requested specifically for "call histry for that particular lead") */}
-                  {/* <View style={{ marginTop: 20, marginBottom: 10 }}>
-                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: colors.text, marginBottom: 10 }}>Recent Calls</Text>
-                    <CallHistoryList lead={lead} />
-                  </View> */}
+                  <View style={{ height: 80 }} />
                 </View>
+
+
               )}
             </ScrollView>
           </>
@@ -765,6 +948,36 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     elevation: 2,
   },
+  radioContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 8,
+    justifyContent: "flex-end",
+  },
+
+  radioCircle: {
+    height: 12,
+    width: 12,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: "#2563EB", // primary color
+
+
+  },
+
+  radioInner: {
+    height: 10,
+    width: 10,
+
+    borderRadius: 5,
+    backgroundColor: "#2563EB",
+
+  },
+
+  radioText: {
+    fontSize: 12,
+    color: "#1F2937",
+  },
   subTab: {
     flex: 1,
     paddingVertical: 12,
@@ -929,53 +1142,143 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   timelineContainer: {
-    padding: 16,
+    padding: 0,
+    paddingTop: 12,
   },
-  timelineItem: {
+  // Legacy (kept for safety)
+  timelineItem: { flexDirection: 'row', marginBottom: 20 },
+  timelineLeft: { alignItems: 'center', marginRight: 16, width: 20 },
+  timelineLine: { position: 'absolute', top: 0, bottom: -20, width: 2, backgroundColor: '#E0E0E0', zIndex: -1 },
+  timelineDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.primary, marginTop: 4 },
+  timelineContent: { flex: 1, backgroundColor: colors.white, padding: 12, borderRadius: 8, elevation: 1 },
+  timelineTitle: { fontSize: 14, fontWeight: 'bold', color: colors.text, marginBottom: 4 },
+  timelineDate: { fontSize: 12, color: colors.textSecondary, marginBottom: 8 },
+  timelineDesc: { fontSize: 14, color: colors.text },
+  // New timeline styles
+  tlHeader: {
     flexDirection: 'row',
-    marginBottom: 20,
-  },
-  timelineLeft: {
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginRight: 16,
-    width: 20,
+    paddingHorizontal: 16,
+    marginBottom: 18,
   },
-  timelineLine: {
-    position: 'absolute',
-    top: 0,
-    bottom: -20,
-    width: 2,
-    backgroundColor: '#E0E0E0',
-    zIndex: -1,
+  tlHeaderText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text,
   },
-  timelineDot: {
-    width: 12,
-    height: 12,
+  tlRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  tlDateCol: {
+    width: 100,
+    alignItems: 'flex-end',
+    paddingRight: 8,
+    paddingTop: 10,
+  },
+  tlDateBadge: {
+    backgroundColor: '#EFEFEF',
     borderRadius: 6,
-    backgroundColor: colors.primary,
-    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  timelineContent: {
+  tlDateText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  tlSpineCol: {
+    width: 44,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  tlSpineLine: {
+    position: 'absolute',
+    top: 44,
+    bottom: -16,
+    width: 2,
+    backgroundColor: '#D0D0D0',
+    left: 21,
+  },
+  tlIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tlCard: {
     flex: 1,
     backgroundColor: colors.white,
+    borderRadius: 10,
     padding: 12,
-    borderRadius: 8,
+    marginLeft: 10,
     elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.07,
+    shadowRadius: 3,
   },
-  timelineTitle: {
+  tlCardExpanded: {
+    borderColor: '#E0E0E0',
+    borderWidth: 1,
+  },
+  tlCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  tlCallLabel: {
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    color: colors.text,
+    flex: 1,
+    flexWrap: 'wrap',
+  },
+  tlChevron: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginLeft: 8,
+  },
+  tlExpanded: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+    paddingTop: 10,
+  },
+  tlDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  tlDetailLabel: {
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  tlDetailValue: {
+    color: colors.text,
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  tlNoteTitle: {
+    fontSize: 14,
+    fontWeight: '700',
     color: colors.text,
     marginBottom: 4,
   },
-  timelineDate: {
+  tlNoteDesc: {
+    fontSize: 13,
+    color: colors.text,
+    marginBottom: 6,
+  },
+  tlAddedBy: {
     fontSize: 12,
     color: colors.textSecondary,
-    marginBottom: 8,
-  },
-  timelineDesc: {
-    fontSize: 14,
-    color: colors.text,
+    fontStyle: 'italic',
   },
   input: {
     borderWidth: 1,
@@ -1037,5 +1340,19 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     elevation: 2,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginHorizontal: 4,
+  },
+  actionBtnText: {
+    color: 'white',
+    fontWeight: 'bold',
+    marginLeft: 8,
   }
 });

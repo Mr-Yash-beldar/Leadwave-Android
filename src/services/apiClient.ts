@@ -2,7 +2,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createNavigationContainerRef } from '@react-navigation/native';
 
-const BASE_URL = 'https://connect.leadvidya.in/api';
+const BASE_URL = 'https://connect.leadwave.in/api';
 
 const apiClient = axios.create({
     baseURL: BASE_URL,

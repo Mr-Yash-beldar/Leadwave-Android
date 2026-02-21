@@ -169,6 +169,7 @@ export const CallLogService = {
         }
     },
 
+
     requestPermissions: async (): Promise<boolean> => {
         try {
             const granted = await PermissionsAndroid.request(
@@ -180,28 +181,28 @@ export const CallLogService = {
         }
     },
 
-    getRemoteCallLogs: async (leadId: string): Promise<CallLog[]> => {
+    /**
+     * Fetches the pre-computed timeline for a lead from the backend.
+     * The backend returns { events: [...], lead: {...} } where each event has
+     * kind ("CALL" | "NOTE"), date, timestamp, label, durStr, addedBy, desc, etc.
+     */
+    getLeadTimeline: async (leadId: string): Promise<any[]> => {
         try {
-            const response = await apiClient.get<any>(`/calls/lead/${leadId}`);
-            // Backend returns { success: true, data: [...] }
-            const logs = response.data?.data || [];
-
-            return logs.map((item: any) => ({
-                id: item._id || item.id,
-                phoneNumber: item.phoneNumber || item.leadPhone || '',
-                name: item.contactName || undefined,
-                // Backend uses callTime
-                dateTime: item.callTime || item.callDate || item.createdAt || new Date().toISOString(),
-                timestamp: new Date(item.callTime || item.callDate || item.createdAt).getTime(),
-                duration: item.duration || 0,
-                type: normalizeCallType((item.type || item.callType || '').toUpperCase()),
-                rawType: item.type,
-                simSlot: 0
-            }));
+            const response = await apiClient.get<any>(`/leads/timeline/${leadId}`);
+            // Backend returns { success: true, data: { events: [...], lead: {...} } }
+            const data = response.data?.data || response.data || {};
+            const events: any[] = data.events || [];
+            console.log('Lead timeline events:', events);
+            return events;
         } catch (error) {
-            console.warn('Failed to fetch remote call logs:', error);
+            console.warn('Failed to fetch lead timeline:', error);
             return [];
         }
+    },
+
+    /** @deprecated use getLeadTimeline instead */
+    getRemoteCallLogs: async (leadId: string): Promise<CallLog[]> => {
+        return [];
     }
 };
 
@@ -225,8 +226,6 @@ const normalizeCallType = (type: string): CallType => {
         case 'OUTGOING': return CallType.Outgoing;
         case 'MISSED': return CallType.Missed;
         case 'REJECTED': return CallType.Rejected;
-        case 'BLOCKED': return CallType.Blocked;
-        case 'VOICEMAIL': return CallType.Voicemail;
         default: return CallType.Unknown;
     }
 };

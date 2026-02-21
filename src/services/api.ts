@@ -70,6 +70,17 @@ export const api = {
             return { success: false, error: true };
         }
     },
+    checkPhone: async (phone: string) => {
+        try {
+            const response = await apiClient.get('/leads/checkandgive', {
+                params: { phone }
+            });
+            return response.data.lead;
+        } catch (error: any) {
+            console.error('Lead Check Error:', error);
+            return { success: false, error: true };
+        }
+    },
 
     getCampaigns: async () => {
         try {
@@ -159,5 +170,5 @@ export const api = {
             throw error;
         }
     },
-    
+
 };
