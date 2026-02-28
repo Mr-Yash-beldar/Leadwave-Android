@@ -1,90 +1,182 @@
-// components/CallEndPopup.tsx
-import React from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, TouchableWithoutFeedback } from 'react-native';
+// src/components/CallEndPopup.tsx
+/**
+ * CallEndPopup — shown after every call ends.
+ *
+ * Checks the phone number via `checkPhone` API (cached) and shows:
+ *  - My lead (assigned to me)   → Dispose Lead + auto-post already done
+ *  - Lead but not mine          → Assign to Me
+ *  - Not in DB                  → Add Lead
+ *  - Always                     → Dismiss
+ */
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  Modal,
+  StyleSheet,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  ActivityIndicator,
+} from 'react-native';
 import { colors } from '../theme/colors';
-import { CallInfo } from '../services/CallDetectionService';
+
+export interface PendingCallEnd {
+  phoneNumber: string;
+  duration: number;       // seconds
+  callType: 'incoming' | 'outgoing' | 'missed';
+}
+
+/** What the checkPhone API returns about a number */
+export interface CheckPhoneResult {
+  found: boolean;
+  isMyLead: boolean;      // lead exists and IS assigned to current user
+  leadId?: string;
+  leadName?: string;
+  leadStatus?: string;
+  leadData?: any;         // full lead object for navigation
+}
 
 interface CallEndPopupProps {
   isVisible: boolean;
-  callInfo: CallInfo;
-  onAction: (action: 'add' | 'dispose' | 'dismiss', callInfo: CallInfo) => void;
+  callEnd: PendingCallEnd | null;
+  checkResult: CheckPhoneResult | null;
+  isChecking: boolean;
+  onDispose: () => void;
+  onAssignSelf: () => void;
+  onAddLead: () => void;
   onClose: () => void;
 }
 
+const formatDuration = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+const callTypeLabel = (type: string): string => {
+  switch (type) {
+    case 'incoming': return '↙ Incoming';
+    case 'outgoing': return '↗ Outgoing';
+    case 'missed': return '✕ Missed';
+    default: return type;
+  }
+};
+
 export const CallEndPopup: React.FC<CallEndPopupProps> = ({
   isVisible,
-  callInfo,
-  onAction,
+  callEnd,
+  checkResult,
+  isChecking,
+  onDispose,
+  onAssignSelf,
+  onAddLead,
   onClose,
 }) => {
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  if (!callEnd) return null;
+
+  const renderActions = () => {
+    if (isChecking) {
+      return (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.loadingText}>Checking number...</Text>
+        </View>
+      );
+    }
+
+    if (!checkResult) return null;
+
+    if (checkResult.found && checkResult.isMyLead) {
+      // My lead — show dispose
+      return (
+        <View style={styles.buttonColumn}>
+          <View style={styles.leadBadge}>
+            <Text style={styles.leadBadgeText}>
+              Your Lead: {checkResult.leadName || 'Known Lead'}
+            </Text>
+          </View>
+          <TouchableOpacity style={[styles.actionBtn, styles.disposeBtn]} onPress={onDispose}>
+            <Text style={styles.disposeBtnText}>✓ Dispose Lead</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (checkResult.found && !checkResult.isMyLead) {
+      // Lead exists but not mine
+      return (
+        <View style={styles.buttonColumn}>
+          <View style={[styles.leadBadge, styles.leadBadgeOrange]}>
+            <Text style={styles.leadBadgeText}>
+              Lead Exists: {checkResult.leadName || 'Someone Else\'s Lead'}
+            </Text>
+          </View>
+          <TouchableOpacity style={[styles.actionBtn, styles.assignBtn]} onPress={onAssignSelf}>
+            <Text style={styles.assignBtnText}>+ Assign to Me</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // Not in DB
+    return (
+      <TouchableOpacity style={[styles.actionBtn, styles.addBtn]} onPress={onAddLead}>
+        <Text style={styles.addBtnText}>+ Add as Lead</Text>
+      </TouchableOpacity>
+    );
   };
 
   return (
     <Modal
       visible={isVisible}
       transparent
-      animationType="fade"
+      animationType="slide"
+      statusBarTranslucent
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.modalOverlay}>
+        <View style={styles.overlay}>
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <View style={styles.popupContainer}>
+            <View style={styles.sheet}>
+              {/* Handle bar */}
+              <View style={styles.handle} />
+
+              {/* Header */}
               <View style={styles.header}>
-                <Text style={styles.title}>Call Ended</Text>
-                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                <View style={styles.callEndIcon}>
+                  <Text style={styles.callEndIconText}>📞</Text>
+                </View>
+                <View style={styles.headerText}>
+                  <Text style={styles.title}>Call Ended</Text>
+                  <Text style={styles.phoneNum}>{callEnd.phoneNumber}</Text>
+                </View>
+                <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                   <Text style={styles.closeText}>✕</Text>
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.content}>
-                <Text style={styles.phoneNumber}>{callInfo.phoneNumber}</Text>
-                
-                {callInfo.name && (
-                  <Text style={styles.contactName}>{callInfo.name}</Text>
-                )}
-                
-                <View style={styles.detailsRow}>
-                  <Text style={styles.detailLabel}>Duration:</Text>
-                  <Text style={styles.detailValue}>
-                    {formatDuration(callInfo.duration || 0)}
-                  </Text>
+              {/* Stats row */}
+              <View style={styles.statsRow}>
+                <View style={styles.stat}>
+                  <Text style={styles.statLabel}>Duration</Text>
+                  <Text style={styles.statValue}>{formatDuration(callEnd.duration)}</Text>
                 </View>
-
-                <View style={styles.detailsRow}>
-                  <Text style={styles.detailLabel}>Type:</Text>
-                  <Text style={styles.detailValue}>
-                    {callInfo.isIncoming ? 'Incoming' : 'Outgoing'}
-                  </Text>
+                <View style={styles.statDivider} />
+                <View style={styles.stat}>
+                  <Text style={styles.statLabel}>Type</Text>
+                  <Text style={styles.statValue}>{callTypeLabel(callEnd.callType)}</Text>
                 </View>
-
-                <View style={styles.buttonContainer}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.addButton]}
-                    onPress={() => onAction('add', callInfo)}
-                  >
-                    <Text style={styles.addButtonText}>Add Lead</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.disposeButton]}
-                    onPress={() => onAction('dispose', callInfo)}
-                  >
-                    <Text style={styles.disposeButtonText}>Dispose Lead</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.dismissButton}
-                  onPress={() => onAction('dismiss', callInfo)}
-                >
-                  <Text style={styles.dismissButtonText}>Dismiss</Text>
-                </TouchableOpacity>
               </View>
+
+              {/* Actions */}
+              <View style={styles.actionsContainer}>
+                {renderActions()}
+              </View>
+
+              {/* Dismiss */}
+              <TouchableOpacity style={styles.dismissBtn} onPress={onClose}>
+                <Text style={styles.dismissText}>Dismiss</Text>
+              </TouchableOpacity>
             </View>
           </TouchableWithoutFeedback>
         </View>
@@ -94,110 +186,165 @@ export const CallEndPopup: React.FC<CallEndPopupProps> = ({
 };
 
 const styles = StyleSheet.create({
-  modalOverlay: {
+  overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
   },
-  popupContainer: {
-    width: '85%',
-    backgroundColor: 'white',
-    borderRadius: 20,
-    overflow: 'hidden',
-    elevation: 5,
+  sheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 32,
+    paddingHorizontal: 20,
+    elevation: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E0E0E0',
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 16,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: colors.primary,
+    marginBottom: 20,
+  },
+  callEndIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFF3E0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  callEndIconText: {
+    fontSize: 22,
+  },
+  headerText: {
+    flex: 1,
   },
   title: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: '700',
+    color: colors.text,
   },
-  closeButton: {
+  phoneNum: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  closeBtn: {
     padding: 4,
   },
   closeText: {
-    color: 'white',
     fontSize: 18,
-    fontWeight: 'bold',
-  },
-  content: {
-    padding: 20,
-  },
-  phoneNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  contactName: {
-    fontSize: 16,
     color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 16,
+    fontWeight: '600',
   },
-  detailsRow: {
+  statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    backgroundColor: '#F8F8F8',
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginBottom: 20,
   },
-  detailLabel: {
-    fontSize: 14,
+  stat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: '#E0E0E0',
+  },
+  statLabel: {
+    fontSize: 12,
     color: colors.textSecondary,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  detailValue: {
-    fontSize: 14,
+  statValue: {
+    fontSize: 16,
     fontWeight: '600',
     color: colors.text,
   },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
+  actionsContainer: {
     marginBottom: 12,
   },
-  actionButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+  loadingRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 6,
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
   },
-  addButton: {
-    backgroundColor: colors.primary,
-  },
-  addButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  disposeButton: {
-    backgroundColor: colors+'warning 20',
-    borderWidth: 1,
-    borderColor: colors+'warning 20',
-  },
-  disposeButtonText: {
-    color: colors+'warning 20',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  dismissButton: {
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  dismissButtonText: {
+  loadingText: {
     color: colors.textSecondary,
     fontSize: 14,
+  },
+  buttonColumn: {
+    gap: 10,
+  },
+  leadBadge: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  leadBadgeOrange: {
+    backgroundColor: '#FFF3E0',
+  },
+  leadBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  actionBtn: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  disposeBtn: {
+    backgroundColor: colors.primary,
+  },
+  disposeBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  assignBtn: {
+    backgroundColor: colors.secondary,
+  },
+  assignBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  addBtn: {
+    backgroundColor: colors.success,
+  },
+  addBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  dismissBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  dismissText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

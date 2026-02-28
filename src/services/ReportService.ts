@@ -9,7 +9,6 @@ export const ReportService = {
     },
 
     calculateMetrics: (calls: any[]): ReportMetrics => {
-        // Basic initialization with zeroes
         const metrics: ReportMetrics = {
             callOverview: {
                 totalCalls: calls.length,
@@ -56,17 +55,23 @@ export const ReportService = {
         let incomingDuration = 0;
 
         calls.forEach(call => {
-            const isConnected = call.callStatus?.toLowerCase() === 'connected' || call.status?.toLowerCase() === 'connected';
+            const status = (call.callStatus || call.status || '').toLowerCase();
+            const type = (call.callType || call.type || '').toLowerCase();
             const duration = Number(call.durationSeconds || call.duration || 0);
+
+            // "connected" or "completed" both count as a connected call
+            const isConnected = status === 'connected' || status === 'completed';
+
+            // Total call time = ALL calls' durations
+            totalDuration += duration;
 
             if (isConnected) {
                 metrics.callOverview.totalConnected++;
-                totalDuration += duration;
             } else {
                 metrics.callOverview.totalUnconnected++;
             }
 
-            if (call.callType?.toLowerCase() === 'outgoing' || call.type?.toLowerCase() === 'outgoing') {
+            if (type === 'outgoing') {
                 metrics.outgoingCalls.totalOutgoing++;
                 if (isConnected) {
                     metrics.outgoingCalls.outgoingConnected++;
@@ -74,7 +79,7 @@ export const ReportService = {
                 } else {
                     metrics.outgoingCalls.outgoingUnanswered++;
                 }
-            } else if (call.callType?.toLowerCase() === 'incoming' || call.type?.toLowerCase() === 'incoming') {
+            } else if (type === 'incoming') {
                 metrics.incomingCalls.totalIncoming++;
                 if (isConnected) {
                     metrics.incomingCalls.incomingConnected++;
@@ -82,6 +87,10 @@ export const ReportService = {
                 } else {
                     metrics.incomingCalls.incomingUnanswered++;
                 }
+            } else if (type === 'missed') {
+                // Some backends send callType:'missed' for missed incoming calls
+                metrics.incomingCalls.totalIncoming++;
+                metrics.incomingCalls.incomingUnanswered++;
             }
         });
 
@@ -89,15 +98,21 @@ export const ReportService = {
         metrics.callOverview.totalCallTime = ReportService.formatDuration(totalDuration);
 
         if (metrics.callOverview.totalConnected > 0) {
-            metrics.callOverview.avgCallDuration = ReportService.formatDuration(totalDuration / metrics.callOverview.totalConnected);
+            metrics.callOverview.avgCallDuration = ReportService.formatDuration(
+                totalDuration / metrics.callOverview.totalConnected
+            );
         }
 
         if (metrics.outgoingCalls.outgoingConnected > 0) {
-            metrics.outgoingCalls.avgOutgoingDuration = ReportService.formatDuration(outgoingDuration / metrics.outgoingCalls.outgoingConnected);
+            metrics.outgoingCalls.avgOutgoingDuration = ReportService.formatDuration(
+                outgoingDuration / metrics.outgoingCalls.outgoingConnected
+            );
         }
 
         if (metrics.incomingCalls.incomingConnected > 0) {
-            metrics.incomingCalls.avgIncomingDuration = ReportService.formatDuration(incomingDuration / metrics.incomingCalls.incomingConnected);
+            metrics.incomingCalls.avgIncomingDuration = ReportService.formatDuration(
+                incomingDuration / metrics.incomingCalls.incomingConnected
+            );
         }
 
         return metrics;

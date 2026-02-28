@@ -22,6 +22,7 @@ interface AuthContextData {
   logout: (reason?: string) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   refreshProfile: () => Promise<User | null>;
+  checkServerStatus: () => Promise<boolean>;  // Add this
 }
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
@@ -32,6 +33,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isFirstLaunch, setIsFirstLaunch] = useState(false);
   const [isServerUp, setIsServerUp] = useState(true);
 
+  // Add checkServerStatus method
+  const checkServerStatus = useCallback(async (): Promise<boolean> => {
+    try {
+      const isUp = await api.checkHealth();
+      setIsServerUp(isUp);
+      return isUp;
+    } catch (error) {
+      console.error('Server health check failed:', error);
+      setIsServerUp(false);
+      return false;
+    }
+  }, []);
 
   const logout = useCallback(async (reason?: string) => {
     try {
@@ -155,7 +168,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       login,
       logout,
       completeOnboarding,
-      refreshProfile
+      refreshProfile,
+      checkServerStatus  // Add this to the provider value
     }}>
       {children}
     </AuthContext.Provider>

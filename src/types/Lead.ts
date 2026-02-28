@@ -27,6 +27,8 @@ export interface Lead {
     followUpDate?: string;
     stage?: string;
     tag?: string;
+    platform?: string;
+    activity?: string;
     dealAmount?: string;
     assignedUser?: string | { name?: string; username?: string };
     campaignName?: string;

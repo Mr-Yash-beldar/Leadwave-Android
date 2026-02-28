@@ -16,7 +16,7 @@ import { ServerDownScreen } from '../screens/ServerDownScreen';
 import { SessionExpiredScreen } from '../screens/SessionExpiredScreen';
 import { CampaignLeadsScreen } from '../screens/CampaignLeadsScreen';
 import { colors } from '../theme/colors';
-import { Phone, Users, BarChart2, Menu, UserPlus, Megaphone } from 'lucide-react-native';
+import { Phone, Users, BarChart2, Menu, UserPlus, Megaphone, Download } from 'lucide-react-native';
 
 import { PrivacyScreen } from '../screens/Onboarding/PrivacyScreen';
 import { ConnectSimScreen } from '../screens/Onboarding/ConnectSimScreen';
@@ -35,6 +35,8 @@ import { useAutoSync } from '../hooks/useAutoSync';
 import { navigationRef } from '../services/apiClient';
 import { CallScreen } from '../screens/CallScreen';
 import { OnboardingScreen } from '../screens/Onboarding/OnboardingScreen';
+import { FollowUpScreen } from '../screens/FollowUpScreen';
+import { UpdateAppScreen } from '../screens/UpdateAppScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -68,9 +70,21 @@ const MoreScreen = () => {
         <Text style={{ color: colors.textSecondary }}>{user?.number}</Text>
       </View>
 
-      <TouchableOpacity onPress={handleExport} style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: 'white', borderRadius: 8, marginBottom: 16 }}>
+      {/* <TouchableOpacity onPress={handleExport} style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: 'white', borderRadius: 8, marginBottom: 16 }}>
         <Text style={{ flex: 1, fontSize: 16 }}>Export Call Records</Text>
         <Menu size={20} color={colors.textSecondary} />
+      </TouchableOpacity> */}
+
+      {/* <TouchableOpacity onPress={() => navigation.navigate('FollowUp')} style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: 'white', borderRadius: 8, marginBottom: 16 }}>
+        <Text style={{ flex: 1, fontSize: 16 }}>📞 Follow-up Reminders</Text>
+      </TouchableOpacity> */}
+
+      <TouchableOpacity
+        onPress={() => navigation.navigate('UpdateApp')}
+        style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: 'white', borderRadius: 8, marginBottom: 16 }}
+      >
+        <Text style={{ flex: 1, fontSize: 16 }}>🔄 Update Application</Text>
+        <Download size={20} color={colors.textSecondary} />
       </TouchableOpacity>
 
       <TouchableOpacity onPress={handleLogout} style={{ flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#FFEBEE', borderRadius: 8 }}>
@@ -149,7 +163,6 @@ export const RootNavigator = () => {
 
 const RootContent = () => {
   const { user, loading, isFirstLaunch, isServerUp } = useAuth();
-  // useAutoSync(); // Removed as per request
 
   useEffect(() => {
     const checkPendingDispose = async () => {
@@ -157,10 +170,6 @@ const RootContent = () => {
         const pendingLeadJson = await AsyncStorage.getItem('pendingDisposeLead');
         if (pendingLeadJson && user && navigationRef.current) {
           const lead = JSON.parse(pendingLeadJson);
-          // Navigate to LeadDetails with dispose tab open
-          // Resetting stack slightly to ensure back button works reasonably well
-          // or just navigate on top. Navigating on top is safer.
-          // We need a small delay to ensure navigation is mounted/ready if checking on mount
           setTimeout(() => {
             navigationRef.current?.navigate('LeadDetails', { lead, openDispose: true });
           }, 500);
@@ -179,10 +188,23 @@ const RootContent = () => {
     return <SplashScreen />;
   }
 
+  // Server-down: render NavigationContainer with ServerDown as the only accessible screen.
+  // This ensures useNavigation() works inside ServerDownScreen.
   if (!isServerUp) {
-    return <ServerDownScreen />;
+    return (
+      <NavigationContainer ref={navigationRef}>
+        <Stack.Navigator
+          id="RootStack"
+          initialRouteName="ServerDown"
+          screenOptions={{ headerShown: false }}
+        >
+          <Stack.Screen name="ServerDown" component={ServerDownScreen} />
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="MainTabs" component={TabNavigator} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    );
   }
-
 
   return (
     <NavigationContainer ref={navigationRef}>
@@ -217,11 +239,12 @@ const RootContent = () => {
             <Stack.Screen name="LeadDetails" component={LeadDetailsScreen} />
             <Stack.Screen name="LeadDispose" component={LeadDisposeScreen} />
             <Stack.Screen name="CallSummary" component={CallSummaryScreen} />
-            <Stack.Screen
-              name="CallScreen"
+            <Stack.Screen name="CallScreen"
               component={CallScreen}
               options={{ headerShown: false, presentation: 'fullScreenModal' }}
             />
+            <Stack.Screen name="FollowUp" component={FollowUpScreen} />
+            <Stack.Screen name="UpdateApp" component={UpdateAppScreen} options={{ headerShown: false }} />
           </>
         )}
         <Stack.Screen name="ServerDown" component={ServerDownScreen} />

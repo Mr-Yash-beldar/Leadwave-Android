@@ -7,6 +7,8 @@ export const campaignService = {
         try {
             const response = await apiClient.get('/campaigns');
             // Backend might return the array directly or wrapped in an object
+            // console.log();
+            
             if (Array.isArray(response.data)) {
                 return response.data;
             } else if (response.data && Array.isArray(response.data.campaigns)) {

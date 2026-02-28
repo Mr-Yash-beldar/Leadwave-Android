@@ -62,7 +62,7 @@ export const LeadDisposeScreen = () => {
             const matchedCalls = await fetchTodayCallLog();
 
             // 2. Log calls to API
-            console.log("Syncing calls for lead:", lead._id);
+            console.log("matched call found :", matchedCalls);
 
             // IMPORTANT: We must post call logs first.
             if (matchedCalls && matchedCalls.length > 0) {
@@ -151,7 +151,7 @@ export const LeadDisposeScreen = () => {
             <Text style={styles.inputLabel}>Expected Value</Text>
             <TextInput
                 style={styles.input}
-                placeholder="0.00"
+                placeholder="Enter expected value..."
                 value={expectedValue}
                 onChangeText={setExpectedValue}
                 keyboardType="numeric"

@@ -137,7 +137,7 @@ export const LeadsScreen = () => {
         <ChevronRight size={24} color={colors.primary} />
       </TouchableOpacity>
 
-      <TouchableOpacity
+      {/* <TouchableOpacity
         style={styles.categoryCard}
         onPress={() => {
           setSelectedCategory('notConnected');
@@ -152,7 +152,7 @@ export const LeadsScreen = () => {
           <Text style={styles.categorySubtitle}>Leads, which were not connected in previous attempt</Text>
         </View>
         <ChevronRight size={24} color={colors.primary} />
-      </TouchableOpacity>
+      </TouchableOpacity> */}
     </View>
   );
 

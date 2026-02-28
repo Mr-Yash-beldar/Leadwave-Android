@@ -13,7 +13,7 @@ const filters = [
   { id: 'incoming', label: 'Incoming', icon: PhoneIncoming },
   { id: 'outgoing', label: 'Outgoing', icon: PhoneOutgoing },
   { id: 'missed', label: 'Missed', icon: PhoneMissed },
-  { id: 'rejected', label: 'Rejected', icon: PhoneOff },
+
 ];
 
 export const FilterBar: React.FC<FilterBarProps> = ({ selectedFilter, onSelectFilter }) => {
@@ -28,9 +28,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({ selectedFilter, onSelectFi
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <ScrollView
         ref={scrollRef}
-        horizontal 
+        horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
@@ -38,16 +38,16 @@ export const FilterBar: React.FC<FilterBarProps> = ({ selectedFilter, onSelectFi
           const Icon = filter.icon;
           const isSelected = selectedFilter === filter.id;
           return (
-            <TouchableOpacity 
-              key={filter.id} 
+            <TouchableOpacity
+              key={filter.id}
               style={styles.filterItem}
               onPress={() => onSelectFilter(filter.id)}
               activeOpacity={0.7}
             >
               <View style={styles.iconContainer}>
-                <Icon 
-                  size={24} 
-                  color={isSelected ? colors.black : '#9E9E9E'} 
+                <Icon
+                  size={24}
+                  color={isSelected ? colors.black : '#9E9E9E'}
                 />
               </View>
               <Text style={[styles.label, isSelected && styles.labelActive]}>

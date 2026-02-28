@@ -13,19 +13,25 @@ export const CallSummaryScreen = () => {
     const [submitting, setSubmitting] = useState(false);
 
     const handleSubmit = async () => {
+
+        console.log("Form Data:", JSON.stringify(formData, null, 2));
         setSubmitting(true);
         try {
             // Prepare payload according to API requirements
             const payload = {
                 leadId: leadId,
-                status: formData.status,
+                status: formData.connected ? formData.status : 'follow up',
                 followupdate: formData.followUpDate,
                 contacted: formData.connected,
-                // Optional fields based on connected status
+                // When connected: send description + expectedValue
                 ...(formData.connected && {
                     note_desc: formData.description,
                     expectedValue: formData.expectedValue,
-                })
+                }),
+                // When NOT connected: pass selected status as note_desc
+                ...(!formData.connected && {
+                    note_desc: formData.status,
+                }),
             };
 
 

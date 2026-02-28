@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,8 @@ import {
   PermissionsAndroid,
   NativeModules,
   NativeEventEmitter,
-  Linking
+  Linking,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -23,6 +24,7 @@ import RNFS from 'react-native-fs';
 import { CallLogService } from '../services/CallLogService';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LeadsService } from '../services/LeadsService';
+import { api } from '../services/api';
 import { MessageCircle, MessageSquare } from 'lucide-react-native';
 
 // import AudioRecorderPlayer from 'react-native-audio-recorder-player'; // REMOVED
@@ -31,11 +33,11 @@ import { MessageCircle, MessageSquare } from 'lucide-react-native';
 const LEAD_STATUS = {
   NEW: "New",
   QUALIFIED: "Qualified",
-  FOLLOW_UP: "Followup",
+  FOLLOW_UP: "Follow up",
   DEMO_BOOKED: "Demo Booked",
   DEMO_COMPLETED: "Demo Completed",
   DEMO_RESCHEDULED: "Demo Rescheduled",
-  NIFC: "Not Interested for Full Course (NIFC)",
+  NIFC: "Not Interested for Full Course",
   MAY_BE_BUY_LATER: "May be Buy Later",
   POSITIVE: "Positive",
   ENROLLED: "Enrolled",
@@ -59,11 +61,60 @@ const { PhoneModule } = NativeModules;
 type Tab = 'LEAD_INFO' | 'DISPOSE_LEAD';
 
 export const LeadDetailsScreen = () => {
-  // const audioRecorderPlayer = AudioRecorderPlayer; // REMOVED
-
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { lead } = route.params as { lead: Lead };
+  const params = route.params as {
+    lead?: Lead;
+    leadId?: string;
+    callInfo?: {
+      id?: string;
+      duration?: number;
+      timestamp?: number;
+      phoneNumber?: string;
+      callType?: string | number;
+      recordingUrl?: string;
+    };
+    fromCall?: boolean;
+  };
+  const { callInfo, fromCall } = params;
+
+  // ── Lead state: fetched from API ─────────────────────────────────────────
+  const [lead, setLead] = useState<Lead>(params.lead ?? {} as Lead);
+  const [leadLoading, setLeadLoading] = useState(true); // always fetch fresh
+  const shimmer = useRef(new Animated.Value(0)).current;
+
+  const fetchLead = useCallback(async (showSkeleton = true) => {
+    const id = (params.lead?._id || params.lead?.id || params.leadId || '');
+    if (!id) return;
+    if (showSkeleton) setLeadLoading(true);
+    try {
+      const fresh = await api.getLeadById(id);
+      if (fresh) setLead(fresh);
+    } catch (e) {
+      console.error('[LeadDetails] Failed to fetch lead:', e);
+    } finally {
+      setLeadLoading(false);
+    }
+  }, [params.lead, params.leadId]);
+
+  // Always fetch fresh data on mount
+  useEffect(() => {
+    fetchLead();
+  }, []);
+
+  // Shimmer animation
+  useEffect(() => {
+    if (!leadLoading) return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(shimmer, { toValue: 0, duration: 900, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [leadLoading, shimmer]);
+
   const [activeTab, setActiveTab] = useState<Tab>('LEAD_INFO');
   const [subTab, setSubTab] = useState<'About' | 'Timeline'>('About');
 
@@ -125,7 +176,7 @@ export const LeadDetailsScreen = () => {
     const hasPermission = await checkPermissions();
     if (hasPermission) {
       // PhoneModule.startCallListener(); // Ensure listener is active
-      PhoneModule.makeCall(lead.phone || lead.number);
+      PhoneModule.makeCall(lead?.phone || (lead as any)?.number);
       // navigation.navigate('CallScreen', { number: lead.phone || lead.number, name: getLeadName() });
     } else {
       Alert.alert(
@@ -172,10 +223,10 @@ export const LeadDetailsScreen = () => {
   // Fetch timeline events from backend
   useEffect(() => {
     const fetchTimelineLogs = async () => {
-      if (!lead._id && !lead.id) return;
+      if (!lead?._id && !lead?.id) return;
       setTimelineLoading(true);
       try {
-        const events = await CallLogService.getLeadTimeline(lead._id || lead.id || '');
+        const events = await CallLogService.getLeadTimeline(lead?._id || lead?.id || '');
         // Backend events are already sorted newest-first
         setTimelineLogs(events);
       } catch (e) {
@@ -185,17 +236,22 @@ export const LeadDetailsScreen = () => {
       }
     };
     fetchTimelineLogs();
-  }, [lead._id, lead.id]);
+  }, [lead?._id, lead?.id]);
 
   // // ... render ...
   // console.log("lead", lead);
 
   const getLeadName = () => {
-    if (lead.firstName || lead.lastName) {
-      return `${lead.firstName || ''} ${lead.lastName || ''}`.trim();
+    if (lead?.firstName || lead?.lastName) {
+      return `${lead?.firstName || ''} ${lead?.lastName || ''}`.trim();
     }
-    return lead.name || 'Unknown';
+    return lead?.name || 'Unknown';
   };
+
+  // Non-null alias — only used in render functions that are guarded by `!leadLoading && lead`
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const lead_nn = lead!;
+
 
   const renderBasicDetails = () => (
     <View style={styles.sectionCard}>
@@ -205,100 +261,24 @@ export const LeadDetailsScreen = () => {
       >
         <Text style={styles.sectionTitle}>Basic Details</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {/* <PenSquare size={16} color={colors.textSecondary} style={{ marginRight: 10 }} /> */}
           {basicDetailsOpen ? <ChevronUp size={20} color={colors.text} /> : <ChevronDown size={20} color={colors.text} />}
         </View>
       </TouchableOpacity>
 
       {basicDetailsOpen && (
         <View style={styles.sectionContent}>
-          <DetailRow label="Lead Name" value={getLeadName()} />
-          <DetailRow label="Mobile Number" value={lead.phone || lead.number || '-'} />
-          <DetailRow label="Alternate Number" value={lead.alt_phone || lead.alternateNumber || '-'} />
-          <DetailRow label="Email Address" value={lead.email || '-'} />
-          <DetailRow label="Creation Time" value={new Date(lead.created || lead.createdAt || Date.now()).toLocaleDateString()} />
+          <DetailRow label="Name" value={`${lead.firstName || ''} ${lead.lastName || ''}`.trim() || '-'} />
+          <DetailRow label="Phone" value={lead.phone || '-'} />
+          <DetailRow label="Alt Phone" value={lead.alt_phone || '-'} />
+          <DetailRow label="Created" value={lead.created ? new Date(lead.created).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'} />
+          <DetailRow label="Updated" value={lead.updated ? new Date(lead.updated).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'} />
         </View>
       )}
     </View>
   );
 
-  const renderNotes = () => (
-    <View style={styles.sectionCard}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Notes</Text>
-      </View>
-      <View style={styles.sectionContent}>
-        {(lead.notes && lead.notes.length > 0) ? (
-          lead.notes.map((note: any, index: number) => {
-            let noteData = note;
-            // If note itself is a string, try to parse it or treat as description
-            if (typeof note === 'string') {
-              try {
-                const parsed = JSON.parse(note);
-                if (typeof parsed === 'object' && parsed !== null) {
-                  noteData = parsed;
-                } else {
-                  noteData = { description: note };
-                }
-              } catch (e) {
-                noteData = { description: note };
-              }
-            }
-
-            // If noteData has a 'note' field that might be JSON
-            if (noteData.note && typeof noteData.note === 'string') {
-              try {
-                const parsed = JSON.parse(noteData.note);
-                if (typeof parsed === 'object' && parsed !== null) {
-                  noteData = { ...noteData, ...parsed };
-                } else {
-                  if (!noteData.description) noteData.description = noteData.note;
-                }
-              } catch (e) {
-                if (!noteData.description) noteData.description = noteData.note;
-              }
-            }
-
-            const description = noteData.note_desc || noteData.notes || 'No description';
-            const dateVal = noteData.date || noteData.createdAt || noteData.timestamp;
-
-            let dateStr = '';
-            if (dateVal) {
-              try {
-                dateStr = new Date(dateVal).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-              } catch (e) { }
-            }
-
-            // Resolve addedBy name
-            let addedByName = 'System';
-            if (noteData.addedBy) {
-              if (typeof noteData.addedBy === 'object') {
-                addedByName = noteData.addedBy.name || noteData.addedBy.username || 'System';
-              } else {
-                addedByName = String(noteData.addedBy);
-              }
-            } else if (noteData.addedByName) {
-              addedByName = noteData.addedByName;
-            }
-
-            return (
-              <View key={index} style={styles.noteItem}>
-                <View style={styles.noteHeaderRow}>
-                  <Text style={styles.noteLabel}>{addedByName}</Text>
-                  <Text style={styles.noteDate}>{dateStr}</Text>
-                </View>
-                <Text style={styles.noteText}>
-                  {typeof description === 'string' ? description : JSON.stringify(description)}
-                </Text>
-              </View>
-            );
-          })
-        ) : (
-          <Text style={styles.noDataText}>No notes available</Text>
-        )}
-      </View>
-    </View>
-  );
+  // Notes section commented out — lead data from API does not include notes array
+  // const renderNotes = () => ( ... );
 
   const renderLeadProgress = () => (
     <View style={styles.sectionCard}>
@@ -308,32 +288,37 @@ export const LeadDetailsScreen = () => {
       >
         <Text style={styles.sectionTitle}>Lead Progress</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {/* <PenSquare size={16} color={colors.textSecondary} style={{ marginRight: 10 }} /> */}
           {progressOpen ? <ChevronUp size={20} color={colors.text} /> : <ChevronDown size={20} color={colors.text} />}
         </View>
       </TouchableOpacity>
 
       {progressOpen && (
         <View style={styles.sectionContent}>
+          {/* Status badge */}
           <View style={styles.row}>
-            <Text style={styles.label}>Stage:</Text>
+            <Text style={styles.label}>Status:</Text>
             <View style={styles.statusBadge}>
-              <Text style={styles.statusText}>{lead.leadStatus || lead.status || 'New'}</Text>
+              <Text style={styles.statusText}>{lead.leadStatus || '-'}</Text>
             </View>
           </View>
           <DetailRow label="Lead Source" value={lead.leadSource || '-'} />
-          <DetailRow label="Follow-Up Date" value={lead.next_followup_date ? new Date(lead.next_followup_date).toLocaleDateString() : (lead.followUpDate || '-')} />
+          <DetailRow label="Tag" value={lead.tag || '-'} />
+          <DetailRow label="Platform" value={lead.platform || '-'} />
+          <DetailRow label="Activity" value={lead.activity || '-'} />
+          <DetailRow label="Expected Value" value={lead.expectedValue ? `₹${lead.expectedValue}` : '-'} />
+          <DetailRow label="Star Rating" value={lead.star ? '⭐'.repeat(Number(lead.star)) : '-'} />
           <DetailRow
-            label="Assigned To"
-            value={
-              (typeof lead.assigned_to === 'object' && lead.assigned_to.name !== null ? (lead.assigned_to as any).name || (lead.assigned_to as any).username : lead.assigned_to) ||
-              (typeof lead.assignedUser === 'object' && lead.assignedUser !== null ? (lead.assignedUser as any).name || (lead.assignedUser as any).username : lead.assignedUser) ||
-              '-'
-            }
+            label="Next Follow-up"
+            value={lead.next_followup_date
+              ? new Date(lead.next_followup_date).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+              : '-'}
           />
-          {lead.stage && <DetailRow label="Stage" value={lead.stage} />}
-          {lead.tag && <DetailRow label="Tag" value={lead.tag} />}
-          {lead.dealAmount && <DetailRow label="Deal Amount" value={lead.dealAmount} />}
+          <DetailRow
+            label="Last Contacted"
+            value={lead.last_contacted_date
+              ? new Date(lead.last_contacted_date).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+              : '-'}
+          />
         </View>
       )}
     </View>
@@ -374,7 +359,27 @@ export const LeadDetailsScreen = () => {
 
     setIsProcessing(true);
     try {
-      const matchedCall = await fetchTodayCallLog();
+      // If we came from history with a specific call, use that log directly.
+      // Otherwise fall back to searching today's device call logs.
+      let matchedCall: any = null;
+      if (callInfo && (callInfo.duration !== undefined || callInfo.timestamp)) {
+        // Build a shape compatible with what CallSummary expects
+        matchedCall = {
+          duration: callInfo.duration ?? 0,
+          timestamp: callInfo.timestamp ?? Date.now(),
+          recordingPath: callInfo.recordingUrl ?? lastRecordingPath,
+          phoneNumber: callInfo.phoneNumber,
+          callType: callInfo.callType,
+        };
+      } else {
+        matchedCall = await fetchTodayCallLog();
+        if (matchedCall) {
+          matchedCall = {
+            ...matchedCall,
+            recordingPath: lastRecordingPath ?? matchedCall.recordingPath,
+          };
+        }
+      }
 
       const formData = {
         connected,
@@ -384,23 +389,15 @@ export const LeadDetailsScreen = () => {
         followUpDate: followUpDate.toISOString(),
       };
 
-      // Find if there is a recorded file from this session
-      // We might want to pass the recording path if we just finished a call
-      // For now, rely on matching call log or existing logic
-
       navigation.navigate('CallSummary', {
         leadId: lead._id || lead.id,
         leadName: getLeadName(),
         formData,
-        callLog: matchedCall ? {
-          duration: matchedCall.duration,
-          timestamp: matchedCall.timestamp,
-          recordingPath: lastRecordingPath // Pass the recorded file path
-        } : (lastRecordingPath ? {
-          duration: 0, // Duration will be handled in summary if needed or from logs
+        callLog: matchedCall ?? (lastRecordingPath ? {
+          duration: 0,
           timestamp: Date.now(),
-          recordingPath: lastRecordingPath
-        } : null)
+          recordingPath: lastRecordingPath,
+        } : null),
       });
 
     } catch (e) {
@@ -593,9 +590,9 @@ export const LeadDetailsScreen = () => {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Leads Details</Text>
-        <TouchableOpacity style={styles.iconBtn}>
-          <RefreshCw size={24} color={colors.text} />
+        <Text style={styles.headerTitle}>{lead ? `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Lead Details' : 'Lead Details'}</Text>
+        <TouchableOpacity style={styles.iconBtn} onPress={() => fetchLead(true)}>
+          <RefreshCw size={24} color={leadLoading ? colors.primary : colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -605,183 +602,204 @@ export const LeadDetailsScreen = () => {
         <TabButton title="DISPOSE LEAD" isActive={activeTab === 'DISPOSE_LEAD'} onPress={() => setActiveTab('DISPOSE_LEAD')} />
       </View>
 
-      {/* Main Content */}
-      <View style={styles.content}>
-        {/* Timer / Banner */}
-
-
-        {activeTab === 'LEAD_INFO' && (
-          <>
-            {/* Sub Tabs */}
-            <View style={styles.subTabContainer}>
-              <TouchableOpacity
-                style={[styles.subTab, subTab === 'About' && styles.subTabActive]}
-                onPress={() => setSubTab('About')}
-              >
-                <Text style={[styles.subTabText, subTab === 'About' && styles.subTabTextActive]}>About</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.subTab, subTab === 'Timeline' && styles.subTabActive]}
-                onPress={() => setSubTab('Timeline')}
-              >
-                <Text style={[styles.subTabText, subTab === 'Timeline' && styles.subTabTextActive]}>Timeline</Text>
-              </TouchableOpacity>
-            </View>
-
-
-            <ScrollView style={styles.scrollContent}>
-              {subTab === 'About' ? (
-                <>
-                  {renderBasicDetails()}
-                  {renderNotes()}
-                  {renderLeadProgress()}
-                  <View style={{ height: 100 }} />
-                </>
-              ) : (
-                <View style={styles.timelineContainer}>
-                  {/* Header */}
-                  <View style={styles.tlHeader}>
-                    <Text style={styles.tlHeaderText}>Activities</Text>
+      {/* ── Skeleton loading overlay ── */}
+      {(leadLoading || !lead) ? (
+        <ScrollView style={styles.content} contentContainerStyle={{ padding: 16 }} scrollEnabled={false}>
+          {[0, 1, 2, 3].map(i => {
+            const opacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.75] });
+            return (
+              <Animated.View key={i} style={[ldSkeletonStyles.card, { opacity }]}>
+                <Animated.View style={[ldSkeletonStyles.titleLine, { opacity }]} />
+                <View style={ldSkeletonStyles.separator} />
+                {[0, 1, 2, 3].map(j => (
+                  <View key={j} style={ldSkeletonStyles.row}>
+                    <Animated.View style={[ldSkeletonStyles.labelLine, { opacity }]} />
+                    <Animated.View style={[ldSkeletonStyles.valueLine, { opacity }]} />
                   </View>
+                ))}
+              </Animated.View>
+            );
+          })}
+        </ScrollView>
+      ) : (
+        <>
 
-                  {timelineLoading && (
-                    <Text style={{ color: colors.textSecondary, marginBottom: 12, textAlign: 'center' }}>Loading history...</Text>
-                  )}
+          {/* Timer / Banner */}
 
-                  {/* Build unified event list from backend + lead created */}
-                  {(() => {
-                    // Append a local "Lead Created" event at the end (backend doesn't include it)
-                    const createdDate = new Date(lead.created || lead.createdAt || Date.now());
-                    const createdSource = lead.leadSource || 'System';
 
-                    const allEvts: any[] = [
-                      ...timelineLogs, // already sorted newest-first by backend
-                      { kind: 'CREATED', date: createdDate.toISOString(), timestamp: createdDate.getTime(), source: createdSource },
-                    ];
+          {activeTab === 'LEAD_INFO' && (
+            <>
+              {/* Sub Tabs */}
+              <View style={styles.subTabContainer}>
+                <TouchableOpacity
+                  style={[styles.subTab, subTab === 'About' && styles.subTabActive]}
+                  onPress={() => setSubTab('About')}
+                >
+                  <Text style={[styles.subTabText, subTab === 'About' && styles.subTabTextActive]}>About</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.subTab, subTab === 'Timeline' && styles.subTabActive]}
+                  onPress={() => setSubTab('Timeline')}
+                >
+                  <Text style={[styles.subTabText, subTab === 'Timeline' && styles.subTabTextActive]}>Timeline</Text>
+                </TouchableOpacity>
+              </View>
 
-                    // Helper: date badge string
-                    const dateBadge = (d: Date) =>
-                      d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-                    let lastBadge = '';
+              <ScrollView style={styles.scrollContent}>
+                {subTab === 'About' ? (
+                  <>
+                    {renderBasicDetails()}
+                    {renderLeadProgress()}
+                    <View style={{ height: 100 }} />
+                  </>
+                ) : (
+                  <View style={styles.timelineContainer}>
+                    {/* Header */}
+                    <View style={styles.tlHeader}>
+                      <Text style={styles.tlHeaderText}>Activities</Text>
+                    </View>
 
-                    return allEvts.map((evt: any, i: number) => {
-                      const evtDate = new Date(evt.date || evt.timestamp);
-                      const badge = dateBadge(evtDate);
-                      const showBadge = badge !== lastBadge;
-                      lastBadge = badge;
-                      const isLast = i === allEvts.length - 1;
+                    {timelineLoading && (
+                      <Text style={{ color: colors.textSecondary, marginBottom: 12, textAlign: 'center' }}>Loading history...</Text>
+                    )}
 
-                      if (evt.kind === 'CALL') {
-                        const expanded = expandedLogIndex === i;
-                        // Icon colour: grey for not_connected, red for missed, green for answered
-                        const isNotConnected = (evt.label || '').toLowerCase().includes('not_connected') || (evt.label || '').toLowerCase().includes('not connected');
-                        const iconBg = isNotConnected ? '#9E9E9E' : evt.isMissed ? '#F44336' : '#4CAF50';
-                        return (
-                          <View key={`call-${evt.logId || i}`} style={styles.tlRow}>
-                            <View style={styles.tlDateCol}>
-                              {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
-                            </View>
-                            <View style={styles.tlSpineCol}>
-                              {!isLast && <View style={styles.tlSpineLine} />}
-                              <View style={[styles.tlIconCircle, { backgroundColor: iconBg }]}>
-                                <Text style={{ color: 'white', fontSize: 16 }}>📞</Text>
+                    {/* Build unified event list from backend + lead created */}
+                    {(() => {
+                      // Append a local "Lead Created" event at the end (backend doesn't include it)
+                      const createdDate = new Date(lead.created || lead.createdAt || Date.now());
+                      const createdSource = lead.leadSource || 'System';
+
+                      const allEvts: any[] = [
+                        ...timelineLogs, // already sorted newest-first by backend
+                        { kind: 'CREATED', date: createdDate.toISOString(), timestamp: createdDate.getTime(), source: createdSource },
+                      ];
+
+                      // Helper: date badge string
+                      const dateBadge = (d: Date) =>
+                        d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                      let lastBadge = '';
+
+                      return allEvts.map((evt: any, i: number) => {
+                        const evtDate = new Date(evt.date || evt.timestamp);
+                        const badge = dateBadge(evtDate);
+                        const showBadge = badge !== lastBadge;
+                        lastBadge = badge;
+                        const isLast = i === allEvts.length - 1;
+
+                        if (evt.kind === 'CALL') {
+                          const expanded = expandedLogIndex === i;
+                          // Icon colour: grey for not_connected, red for missed, green for answered
+                          const isNotConnected = (evt.label || '').toLowerCase().includes('not_connected') || (evt.label || '').toLowerCase().includes('not connected');
+                          const iconBg = isNotConnected ? '#9E9E9E' : evt.isMissed ? '#F44336' : '#4CAF50';
+                          return (
+                            <View key={`call-${evt.logId || i}`} style={styles.tlRow}>
+                              <View style={styles.tlDateCol}>
+                                {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
                               </View>
-                            </View>
-                            <TouchableOpacity
-                              style={[styles.tlCard, expanded && styles.tlCardExpanded]}
-                              onPress={() => setExpandedLogIndex(expanded ? null : i)}
-                              activeOpacity={0.8}
-                            >
-                              <View style={styles.tlCardRow}>
-                                <Text style={styles.tlCallLabel}>{evt.label} | {evt.timeStr}</Text>
-                                <Text style={styles.tlChevron}>{expanded ? '▲' : '▼'}</Text>
-                              </View>
-                              {expanded && (
-                                <View style={styles.tlExpanded}>
-                                  <View style={styles.tlDetailRow}>
-                                    <Text style={styles.tlDetailLabel}>Call Duration</Text>
-                                    <Text style={styles.tlDetailValue}>{evt.durStr}</Text>
-                                  </View>
-                                  {evt.addedBy && (
-                                    <View style={styles.tlDetailRow}>
-                                      <Text style={styles.tlDetailLabel}>Agent</Text>
-                                      <Text style={styles.tlDetailValue}>{evt.addedBy}</Text>
-                                    </View>
-                                  )}
+                              <View style={styles.tlSpineCol}>
+                                {!isLast && <View style={styles.tlSpineLine} />}
+                                <View style={[styles.tlIconCircle, { backgroundColor: iconBg }]}>
+                                  <Text style={{ color: 'white', fontSize: 16 }}>📞</Text>
                                 </View>
-                              )}
-                            </TouchableOpacity>
-                          </View>
-                        );
-                      }
+                              </View>
+                              <TouchableOpacity
+                                style={[styles.tlCard, expanded && styles.tlCardExpanded]}
+                                onPress={() => setExpandedLogIndex(expanded ? null : i)}
+                                activeOpacity={0.8}
+                              >
+                                <View style={styles.tlCardRow}>
+                                  <Text style={styles.tlCallLabel}>{evt.label} | {evt.timeStr}</Text>
+                                  <Text style={styles.tlChevron}>{expanded ? '▲' : '▼'}</Text>
+                                </View>
+                                {expanded && (
+                                  <View style={styles.tlExpanded}>
+                                    <View style={styles.tlDetailRow}>
+                                      <Text style={styles.tlDetailLabel}>Call Duration</Text>
+                                      <Text style={styles.tlDetailValue}>{evt.durStr}</Text>
+                                    </View>
+                                    {evt.addedBy && (
+                                      <View style={styles.tlDetailRow}>
+                                        <Text style={styles.tlDetailLabel}>Agent</Text>
+                                        <Text style={styles.tlDetailValue}>{evt.addedBy}</Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        }
 
-                      if (evt.kind === 'NOTE') {
+                        if (evt.kind === 'NOTE') {
+                          return (
+                            <View key={`note-${evt.noteId || i}`} style={styles.tlRow}>
+                              <View style={styles.tlDateCol}>
+                                {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
+                              </View>
+                              <View style={styles.tlSpineCol}>
+                                {!isLast && <View style={styles.tlSpineLine} />}
+                                <View style={[styles.tlIconCircle, { backgroundColor: '#FF9800' }]}>
+                                  <Text style={{ color: 'white', fontSize: 14 }}>📝</Text>
+                                </View>
+                              </View>
+                              <View style={styles.tlCard}>
+                                <Text style={styles.tlNoteTitle}>Note Added</Text>
+                                <Text style={styles.tlNoteDesc}>{evt.desc}</Text>
+                                {evt.addedBy && <Text style={styles.tlAddedBy}>Added by: {evt.addedBy}</Text>}
+                              </View>
+                            </View>
+                          );
+                        }
+
+                        // CREATED
                         return (
-                          <View key={`note-${evt.noteId || i}`} style={styles.tlRow}>
+                          <View key={`created-${i}`} style={styles.tlRow}>
                             <View style={styles.tlDateCol}>
                               {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
                             </View>
                             <View style={styles.tlSpineCol}>
-                              {!isLast && <View style={styles.tlSpineLine} />}
-                              <View style={[styles.tlIconCircle, { backgroundColor: '#FF9800' }]}>
-                                <Text style={{ color: 'white', fontSize: 14 }}>📝</Text>
+                              <View style={[styles.tlIconCircle, { backgroundColor: '#9C27B0' }]}>
+                                <Text style={{ color: 'white', fontSize: 16 }}>👤</Text>
                               </View>
                             </View>
                             <View style={styles.tlCard}>
-                              <Text style={styles.tlNoteTitle}>Note Added</Text>
-                              <Text style={styles.tlNoteDesc}>{evt.desc}</Text>
-                              {evt.addedBy && <Text style={styles.tlAddedBy}>Added by: {evt.addedBy}</Text>}
+                              <Text style={styles.tlCallLabel}>Lead Created | Source: {evt.source}</Text>
+                              <Text style={styles.tlAddedBy}>{evtDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
                             </View>
                           </View>
                         );
-                      }
-
-                      // CREATED
-                      return (
-                        <View key={`created-${i}`} style={styles.tlRow}>
-                          <View style={styles.tlDateCol}>
-                            {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
-                          </View>
-                          <View style={styles.tlSpineCol}>
-                            <View style={[styles.tlIconCircle, { backgroundColor: '#9C27B0' }]}>
-                              <Text style={{ color: 'white', fontSize: 16 }}>👤</Text>
-                            </View>
-                          </View>
-                          <View style={styles.tlCard}>
-                            <Text style={styles.tlCallLabel}>Lead Created | Source: {evt.source}</Text>
-                            <Text style={styles.tlAddedBy}>{evtDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                          </View>
-                        </View>
-                      );
-                    });
-                  })()}
-                  <View style={{ height: 80 }} />
-                </View>
+                      });
+                    })()}
+                    <View style={{ height: 80 }} />
+                  </View>
 
 
-              )}
+                )}
+              </ScrollView>
+            </>
+          )}
+
+          {activeTab === 'DISPOSE_LEAD' && (
+            <ScrollView style={styles.scrollContent}>
+              {renderDisposeContent()}
+              <View style={{ height: 100 }} />
             </ScrollView>
-          </>
-        )}
+          )}
 
-        {activeTab === 'DISPOSE_LEAD' && (
-          <ScrollView style={styles.scrollContent}>
-            {renderDisposeContent()}
-            <View style={{ height: 100 }} />
-          </ScrollView>
-        )}
-      </View>
+          {/* Footer Call Button */}
+          {activeTab !== 'DISPOSE_LEAD' && (
+            <View style={styles.footer}>
+              <TouchableOpacity style={styles.footerCallBtn} onPress={handleCallNow}>
+                <Text style={styles.footerCallText}>Call Now</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
+      )}
 
-      {/* Footer Call Button */}
-      {activeTab != 'DISPOSE_LEAD' && (
-        < View style={styles.footer}>
-          <TouchableOpacity style={styles.footerCallBtn} onPress={handleCallNow}>
-            <Text style={styles.footerCallText}>Call Now</Text>
-          </TouchableOpacity>
-        </View>)}
-
-    </SafeAreaView >
+    </SafeAreaView>
   );
 };
 
@@ -1355,4 +1373,19 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 8,
   }
+});
+
+/** Skeleton styles for LeadDetailsScreen loading shimmer */
+const ldSkeletonStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#fff', borderRadius: 10, padding: 16,
+    marginBottom: 14, elevation: 1, borderWidth: 1, borderColor: '#f0f0f0',
+  },
+  titleLine: {
+    height: 14, borderRadius: 7, backgroundColor: '#E0E0E0', width: '40%', marginBottom: 12,
+  },
+  separator: { height: 1, backgroundColor: '#EEEEEE', marginBottom: 14 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 } as const,
+  labelLine: { height: 12, borderRadius: 6, backgroundColor: '#E0E0E0', width: '35%' },
+  valueLine: { height: 12, borderRadius: 6, backgroundColor: '#E0E0E0', width: '45%' },
 });

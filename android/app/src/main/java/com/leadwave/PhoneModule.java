@@ -5,10 +5,12 @@ import android.net.Uri;
 import android.telecom.TelecomManager;
 import android.os.Build;
 import android.content.Context;
+import android.content.SharedPreferences;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
+import com.facebook.react.bridge.WritableNativeMap;
 
 import com.facebook.react.bridge.UiThreadUtil;
 import android.telephony.PhoneStateListener;
@@ -21,6 +23,18 @@ public class PhoneModule extends ReactContextBaseJavaModule {
     private TelephonyManager telephonyManager;
     private MyPhoneStateListener phoneStateListener;
     private static boolean isCallActive = false;
+
+    // Call tracking fields
+    private static String lastRingingNumber = null;
+    private static long callStartTime = 0;
+    private static boolean wasRinging = false;  // true if call came in as ringing (incoming)
+    private static boolean wasOffhook = false;  // true if call was active/offhook
+
+    private static final String PREFS_NAME = "LeadwaveCallPrefs";
+    private static final String PREF_PENDING_PHONE = "pending_phone";
+    private static final String PREF_PENDING_DURATION = "pending_duration";
+    private static final String PREF_PENDING_TYPE = "pending_type";
+    private static final String PREF_HAS_PENDING = "has_pending";
 
     PhoneModule(ReactApplicationContext context) {
         super(context);
@@ -65,28 +79,90 @@ public class PhoneModule extends ReactContextBaseJavaModule {
             WritableMap params = Arguments.createMap();
             
             switch (state) {
+                case TelephonyManager.CALL_STATE_RINGING:
+                    // Incoming call ringing — capture the number
+                    if (phoneNumber != null && !phoneNumber.isEmpty()) {
+                        lastRingingNumber = phoneNumber;
+                    }
+                    wasRinging = true;
+                    wasOffhook = false;
+                    params.putInt("state", 2); // STATE_RINGING
+                    if (phoneNumber != null) params.putString("number", phoneNumber);
+                    sendEvent("CallStateChanged", params);
+                    break;
+
                 case TelephonyManager.CALL_STATE_OFFHOOK:
                     // Call started or active
                     if (!isCallActive) {
                         isCallActive = true;
+                        callStartTime = System.currentTimeMillis();
+                        // Capture number for outgoing calls (phoneNumber may be empty here)
+                        if (!wasRinging && phoneNumber != null && !phoneNumber.isEmpty()) {
+                            lastRingingNumber = phoneNumber;
+                        }
+                        wasOffhook = true;
                         params.putInt("state", 4); // Simulate STATE_ACTIVE
                         sendEvent("CallStateChanged", params);
                         // Trigger recording if not already started by InCallService
-                        CallService.startRecordingManual(phoneNumber);
+                        CallService.startRecordingManual(lastRingingNumber);
                     }
                     break;
+
                 case TelephonyManager.CALL_STATE_IDLE:
                     // Call ended
-                    if (isCallActive) {
-                        isCallActive = false;
-                        params.putInt("state", 7); // Simulate STATE_DISCONNECTED
-                        sendEvent("CallStateChanged", params);
-                        CallService.stopRecordingManual();
+                    if (isCallActive || wasRinging) {
+                        long durationMs = (callStartTime > 0) ? (System.currentTimeMillis() - callStartTime) : 0;
+                        int durationSec = (int)(durationMs / 1000);
+
+                        // Determine call type
+                        String callType;
+                        if (wasRinging && wasOffhook) {
+                            callType = "incoming"; // answered incoming
+                        } else if (wasRinging && !wasOffhook) {
+                            callType = "missed";   // ringing but never answered
+                        } else {
+                            callType = "outgoing"; // offhook without ringing = outgoing
+                        }
+
+                        String endedPhone = lastRingingNumber != null ? lastRingingNumber : "";
+
+                        if (isCallActive) {
+                            isCallActive = false;
+                            WritableMap stateParams = Arguments.createMap();
+                            stateParams.putInt("state", 7); // Simulate STATE_DISCONNECTED
+                            sendEvent("CallStateChanged", stateParams);
+                            CallService.stopRecordingManual();
+                        }
+
+                        // Emit CallEnded event for the popup
+                        if (!endedPhone.isEmpty()) {
+                            WritableMap endParams = Arguments.createMap();
+                            endParams.putString("phoneNumber", endedPhone);
+                            endParams.putInt("duration", durationSec);
+                            endParams.putString("callType", callType);
+                            sendEvent("CallEnded", endParams);
+
+                            // Persist to SharedPreferences for background recovery
+                            try {
+                                SharedPreferences prefs = getReactApplicationContext()
+                                    .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+                                prefs.edit()
+                                    .putString(PREF_PENDING_PHONE, endedPhone)
+                                    .putInt(PREF_PENDING_DURATION, durationSec)
+                                    .putString(PREF_PENDING_TYPE, callType)
+                                    .putBoolean(PREF_HAS_PENDING, true)
+                                    .apply();
+                            } catch (Exception e) {
+                                android.util.Log.w("PhoneModule", "Failed to save pending call", e);
+                            }
+                        }
+
+                        // Reset tracking
+                        wasRinging = false;
+                        wasOffhook = false;
+                        lastRingingNumber = null;
+                        callStartTime = 0;
                     }
-                    break;
-                case TelephonyManager.CALL_STATE_RINGING:
-                    params.putInt("state", 2); // STATE_RINGING
-                    sendEvent("CallStateChanged", params);
                     break;
             }
         }
@@ -216,6 +292,43 @@ public class PhoneModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void addListener(String eventName) {
         // Required for React Native built-in Event Emitter Calls
+    }
+
+    /**
+     * Reads and clears any pending call stored in SharedPreferences.
+     * Called by HistoryScreen when the app becomes active / is focused.
+     * Returns { phoneNumber, duration, callType } or null.
+     */
+    @ReactMethod
+    public void getPendingCall(Promise promise) {
+        try {
+            SharedPreferences prefs = getReactApplicationContext()
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            boolean hasPending = prefs.getBoolean(PREF_HAS_PENDING, false);
+            if (!hasPending) {
+                promise.resolve(null);
+                return;
+            }
+            String phone = prefs.getString(PREF_PENDING_PHONE, "");
+            int duration = prefs.getInt(PREF_PENDING_DURATION, 0);
+            String callType = prefs.getString(PREF_PENDING_TYPE, "incoming");
+
+            // Clear the pending record so it doesn't show again
+            prefs.edit()
+                .remove(PREF_PENDING_PHONE)
+                .remove(PREF_PENDING_DURATION)
+                .remove(PREF_PENDING_TYPE)
+                .putBoolean(PREF_HAS_PENDING, false)
+                .apply();
+
+            WritableMap result = Arguments.createMap();
+            result.putString("phoneNumber", phone);
+            result.putInt("duration", duration);
+            result.putString("callType", callType);
+            promise.resolve(result);
+        } catch (Exception e) {
+            promise.reject("ERR_PENDING_CALL", e);
+        }
     }
 
     @ReactMethod

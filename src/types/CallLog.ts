@@ -2,7 +2,6 @@ export enum CallType {
     Incoming = 'INCOMING',
     Outgoing = 'OUTGOING',
     Missed = 'MISSED',
-    Rejected = 'REJECTED',
     Unknown = 'UNKNOWN',
 }
 

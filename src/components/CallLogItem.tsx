@@ -34,7 +34,8 @@ import {
   UserPlus,
   X,
   CheckCircle,
-  Trash2
+  Trash2,
+  UserCheck
 } from 'lucide-react-native';
 import { api } from '../services/api';
 
@@ -45,7 +46,6 @@ const CALL_TYPE_INFO = {
   [CallType.Incoming]: { color: '#8BC34A', Icon: PhoneIncoming },
   [CallType.Outgoing]: { color: '#FFA000', Icon: PhoneOutgoing },
   [CallType.Missed]: { color: '#E57373', Icon: PhoneMissed },
-  [CallType.Rejected]: { color: '#E57373', Icon: PhoneOff },
   [CallType.Unknown]: { color: '#999', Icon: Phone }
 };
 
@@ -67,11 +67,17 @@ interface CallLogItemProps {
     leadId?: string;
     leadData?: any;
     disposed?: boolean;
+    canAssignSelf?: boolean;      // lead in DB, not mine (unassigned or other's)
+    isAssignedToOther?: boolean;  // lead in DB, assigned to someone else specifically
+    assignedToName?: string;      // name of the agent it's assigned to
+    _enrichedLeadId?: string;     // leadId from checkPhone enrichment
+    _enrichedLeadData?: any;      // leadData from checkPhone enrichment
   };
   simCount?: number;
   isLeadLog?: boolean;
   onAddLead?: (number: string) => void;
   onDispose?: (item: any) => void;
+  onAssignSelf?: (item: any) => void;
 }
 
 // Extracted modal component to prevent re-renders of main component
@@ -228,23 +234,41 @@ const AddLeadModal = memo(({
   );
 });
 
-export const CallLogItem: React.FC<CallLogItemProps> = memo(({
-  item,
-  simCount = 0,
-  isLeadLog = false,
-  onAddLead,
-  onDispose,
-}) => {
+export const CallLogItem: React.FC<CallLogItemProps> = memo((
+  {
+    item,
+    simCount = 0,
+    isLeadLog = false,
+    onAddLead,
+    onDispose,
+    onAssignSelf,
+  }) => {
   const navigation = useNavigation<any>();
   const [isAddLeadModalVisible, setIsAddLeadModalVisible] = useState(false);
   const [checkingLead, setCheckingLead] = useState(false);
 
-  // Memoized values to prevent recalculations
-  const isMyLead = useMemo(() => !!(item.leadId || item.leadData), [item.leadId, item.leadData]);
+  // ── Lead state flags ──────────────────────────────────────────────────────
+  // MINE: has real leadId (matched by HistoryScreen) OR leadData without canAssignSelf
+  const isMyLead = useMemo(() =>
+    !!(item.leadId || (item.leadData && !item.canAssignSelf)),
+    [item.leadId, item.leadData, item.canAssignSelf]
+  );
 
+  // Resolved agent name (from enrichment or explicit field)
+  const assignedToName = useMemo(() => {
+    if (item.assignedToName) return item.assignedToName;
+    const lead = item._enrichedLeadData || item.leadData;
+    if (!lead) return null;
+    const a = lead.assigned_to || lead.assignedTo;
+    if (!a) return null;
+    if (typeof a === 'object') return (a as any).name || (a as any).username || null;
+    return null;
+  }, [item.assignedToName, item._enrichedLeadData, item.leadData]);
+
+  // Case A: not in DB at all
   const showAddLeadButton = useMemo(() =>
-    !isLeadLog && !isMyLead && !item.disposed,
-    [isLeadLog, isMyLead, item.disposed]
+    !isLeadLog && !isMyLead && !item._enrichedLeadId && !item.disposed,
+    [isLeadLog, isMyLead, item._enrichedLeadId, item.disposed]
   );
 
   const showDisposeButton = useMemo(() =>
@@ -252,12 +276,20 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
     [item.disposed, isLeadLog, isMyLead]
   );
 
-  const displayName = useMemo(() =>
-    isMyLead
-      ? (item.leadName || `${item.leadData?.firstName || ''} ${item.leadData?.lastName || ''}`.trim() || 'Unknown Lead')
-      : (item.name || item.phoneNumber || 'Unknown'),
-    [isMyLead, item.leadName, item.leadData, item.name, item.phoneNumber]
-  );
+  const displayName = useMemo(() => {
+    // My lead: prefer leadName → leadData name → fallback
+    if (isMyLead) {
+      return item.leadName ||
+        `${item.leadData?.firstName || ''} ${item.leadData?.lastName || ''}`.trim() ||
+        'Unknown Lead';
+    }
+    // Enriched lead (found in DB, not yet mine): show lead name from API
+    if (item.canAssignSelf && item.leadName) {
+      return item.leadName;
+    }
+    // Unknown number
+    return item.name || item.phoneNumber || 'Unknown';
+  }, [isMyLead, item.leadName, item.leadData, item.name, item.phoneNumber, item.canAssignSelf]);
 
   const displayNumber = useMemo(() =>
     item.phoneNumber || item.leadMobile || 'No number',
@@ -306,14 +338,55 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
   }, [navigation, displayNumber, displayName, isMyLead]);
 
   const handleLeadPress = useCallback(() => {
+    // MINE: open LeadDetails
     if (isMyLead) {
+      const callInfo = {
+        id: item.id,
+        duration: item.duration,
+        timestamp: item.timestamp,
+        phoneNumber: item.phoneNumber || item.leadMobile,
+        callType: item.type,
+        recordingUrl: item.recordingUrl,
+      };
       if (item.leadData) {
-        navigation.navigate('LeadDetails', { lead: item.leadData });
+        navigation.navigate('LeadDetails', { lead: item.leadData, fromCall: true, callInfo });
       } else if (item.leadId) {
-        navigation.navigate('LeadDetails', { leadId: item.leadId });
+        navigation.navigate('LeadDetails', { leadId: item.leadId, fromCall: true, callInfo });
       }
+      return;
     }
-  }, [isMyLead, item.leadData, item.leadId, navigation]);
+    console.log('item', item);
+
+    // ASSIGNED TO SOMEONE ELSE: show info, don't navigate
+    if (item.isAssignedToOther) {
+      Alert.alert(
+        'Lead Assigned',
+        `This lead is assigned to ${assignedToName || 'another agent'}.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // UNASSIGNED (canAssignSelf but NOT isAssignedToOther): prompt assign
+    if (item.canAssignSelf) {
+      Alert.alert(
+        'Assign Lead',
+        `"${displayName}" is in the system but not yet assigned.\nAssign this lead to yourself?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Assign to Me', onPress: () => onAssignSelf && onAssignSelf(item) },
+        ]
+      );
+      return;
+    }
+
+    // NOT IN DB: go to analytics
+    navigation.navigate('ContactAnalytics', {
+      phoneNumber: displayNumber,
+      name: displayName,
+      isLead: false,
+    });
+  }, [isMyLead, item, navigation, displayName, displayNumber, onAssignSelf, assignedToName]);
 
   const handleDisposePress = useCallback(() => {
     if (onDispose) {
@@ -383,16 +456,29 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
     setIsAddLeadModalVisible(false);
   }, []);
 
+  // Unified card press: routes to correct handler
+  const handleCardPress = useCallback(() => {
+    handleLeadPress();
+  }, [handleLeadPress]);
+
   return (
     <>
       <View style={styles.card}>
         <TouchableOpacity
           style={styles.topSection}
-          onPress={isMyLead ? handleLeadPress : handleAnalytics}
+          onPress={handleCardPress}
           activeOpacity={0.7}
         >
-          <View style={[styles.avatar, { backgroundColor: color }]}>
-            {isMyLead ? <User size={20} color="white" /> : <TypeIcon size={20} color="white" />}
+          {/* Avatar icon: 4 states */}
+          <View style={[styles.avatar, { backgroundColor: isMyLead ? color : item.isAssignedToOther ? '#9E9E9E' : item.canAssignSelf ? '#FFA000' : color }]}>
+            {isMyLead
+              ? <User size={20} color="white" />
+              : item.isAssignedToOther
+                ? <User size={20} color="white" />        // assigned to someone else
+                : item.canAssignSelf
+                  ? <UserCheck size={20} color="white" /> // unassigned — can assign
+                  : <UserPlus size={20} color="white" />  // not in DB
+            }
           </View>
 
           <View style={styles.info}>
@@ -404,12 +490,7 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
 
             {isMyLead && (
               <View style={styles.leadExtra}>
-                {item.leadEmail && (
-                  <View style={styles.leadRow}>
-                    <Mail size={14} color="#757575" />
-                    <Text style={styles.leadText}>{item.leadEmail}</Text>
-                  </View>
-                )}
+
                 {item.leadMobile && item.leadMobile !== displayNumber && (
                   <View style={styles.leadRow}>
                     <Phone size={14} color="#757575" />
@@ -418,6 +499,7 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
                 )}
               </View>
             )}
+
 
             {/* {item.disposed && (
               <View style={styles.disposedTag}>
@@ -439,33 +521,57 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
         </TouchableOpacity>
 
         <View style={styles.actionRow}>
+
+          {/* ── Case A: NOT in DB → add lead ── */}
           {showAddLeadButton && (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handleAddLeadPress}
-              disabled={checkingLead}
-            >
-              {checkingLead ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <UserPlus size={20} color={colors.primary} />
-              )}
+            <TouchableOpacity style={styles.actionButton} onPress={handleAddLeadPress} disabled={checkingLead}>
+              {checkingLead
+                ? <ActivityIndicator size="small" color={colors.primary} />
+                : <UserPlus size={20} color={colors.primary} />}
             </TouchableOpacity>
           )}
 
-          {/* {showDisposeButton && (
-            <TouchableOpacity style={styles.actionButton} onPress={handleDisposePress}>
-              <Trash2 size={20} color={colors.error || '#ef4444'} />
+          {/* ── Case B: UNASSIGNED → show assign button ── */}
+          {!isMyLead && item.canAssignSelf && !item.isAssignedToOther && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.assignSelfBtn]}
+              onPress={() => {
+                Alert.alert(
+                  'Assign Lead to Me',
+                  `"${item.leadName || item.phoneNumber}" is in the system but not yet assigned.\nAssign to yourself?`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Assign', onPress: () => onAssignSelf && onAssignSelf(item) },
+                  ]
+                );
+              }}
+            >
+              <UserCheck size={20} color='#FFA000' />
             </TouchableOpacity>
-          )} */}
+          )}
 
-          <TouchableOpacity style={styles.actionButton} onPress={handleCopy}>
-            <Copy size={20} color="#9E9E9E" />
-          </TouchableOpacity>
+          {/* ── Case C: ASSIGNED TO SOMEONE ELSE → show who + copy + WA ── */}
+          {item.isAssignedToOther && (
+            <View style={styles.assignedBadge}>
+              <User size={13} color="#555" />
+              <Text style={styles.assignedText} numberOfLines={1}>
+                {assignedToName || 'Other agent'}
+              </Text>
+            </View>
+          )}
 
-          <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp}>
-            <MessageCircle size={20} color="#25D366" />
-          </TouchableOpacity>
+          {/* ── Case C + Mine → copy + WhatsApp ── */}
+          {(isMyLead || item.isAssignedToOther) && (
+            <>
+              <TouchableOpacity style={styles.actionButton} onPress={handleCopy}>
+                <Copy size={20} color="#9E9E9E" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton} onPress={handleWhatsApp}>
+                <MessageCircle size={20} color="#25D366" />
+              </TouchableOpacity>
+            </>
+          )}
+
         </View>
 
         {isMyLead && (item.notes || item.callStatus) && (
@@ -482,12 +588,12 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
           </View>
         )}
 
-        {!isMyLead && !isLeadLog && (
+        {/* {!isMyLead && !isLeadLog && (
           <TouchableOpacity style={styles.noteSection}>
             <StickyNote size={14} color="#9E9E9E" />
             <Text style={styles.noteText}>Tap to add note & tag</Text>
           </TouchableOpacity>
-        )}
+        )} */}
       </View>
 
       <AddLeadModal
@@ -499,12 +605,15 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo(({
     </>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison for memo to prevent unnecessary re-renders
+  // Custom comparison — re-render if identity, lead name, canAssignSelf or leadData changes
   return (
     prevProps.item.id === nextProps.item.id &&
     prevProps.item.disposed === nextProps.item.disposed &&
     prevProps.item.notes === nextProps.item.notes &&
     prevProps.item.callStatus === nextProps.item.callStatus &&
+    prevProps.item.leadName === nextProps.item.leadName &&
+    prevProps.item.canAssignSelf === nextProps.item.canAssignSelf &&
+    prevProps.item.leadId === nextProps.item.leadId &&
     prevProps.simCount === nextProps.simCount &&
     prevProps.isLeadLog === nextProps.isLeadLog
   );
@@ -616,6 +725,12 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     padding: 8,
+  },
+  assignSelfBtn: {
+    backgroundColor: '#FFF8E1',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFC107',
   },
   noteSection: {
     backgroundColor: '#F5F5F5',
@@ -757,5 +872,21 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontWeight: 'bold',
     color: '#000',
+  },
+  assignedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F4FF',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 4,
+    maxWidth: 120,
+  },
+  assignedText: {
+    fontSize: 11,
+    color: '#555',
+    fontWeight: '500',
+    flexShrink: 1,
   },
 });

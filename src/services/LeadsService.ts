@@ -87,11 +87,13 @@ export const LeadsService = {
                         'Content-Type': 'multipart/form-data',
                     },
                 });
+                console.log("required", response);
                 return response.data;
             }
 
             // Fallback to regular JSON if no local file
             const response = await apiClient.post('/calls', data);
+            console.log("call log response :", response);
             return response.data;
         } catch (error) {
             console.error('Error logging call:', error);

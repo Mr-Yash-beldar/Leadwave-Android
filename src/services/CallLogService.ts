@@ -10,7 +10,7 @@ const generateMockLogs = (count: number): CallLog[] => {
         CallType.Incoming,
         CallType.Outgoing,
         CallType.Missed,
-        CallType.Rejected
+
     ];
     const names = ['Alice Smith', 'Bob Jones', 'Mom', 'Dad', 'Work', 'Unknown', 'Scam Likely'];
 
@@ -25,7 +25,7 @@ const generateMockLogs = (count: number): CallLog[] => {
             name: Math.random() > 0.3 ? names[Math.floor(Math.random() * names.length)] : undefined,
             dateTime: date.toISOString(),
             timestamp: date.getTime(),
-            duration: type === CallType.Missed || type === CallType.Rejected ? 0 : Math.floor(Math.random() * 600),
+            duration: type === CallType.Missed ? 0 : Math.floor(Math.random() * 600),
             type,
             simSlot: Math.floor(Math.random() * 2), // Random SIM 0 or 1 for testing
         };
@@ -143,25 +143,25 @@ export const CallLogService = {
 
             // Mock implementation for development - generate logs for the specific day
             // Only generate if it's within the last 30 days (typical for mock data)
-            if (daysOffset < 30) {
-                const count = Math.floor(Math.random() * 5) + 2; // 2-6 logs for that day
-                return Array.from({ length: count }).map((_, i) => {
-                    const date = new Date(minTimestamp + Math.random() * (24 * 60 * 60 * 1000));
-                    const types = [CallType.Incoming, CallType.Outgoing, CallType.Missed, CallType.Rejected];
-                    const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eva'];
+            // if (daysOffset < 30) {
+            //     const count = Math.floor(Math.random() * 5) + 2; // 2-6 logs for that day
+            //     return Array.from({ length: count }).map((_, i) => {
+            //         const date = new Date(minTimestamp + Math.random() * (24 * 60 * 60 * 1000));
+            //         const types = [CallType.Incoming, CallType.Outgoing, CallType.Missed, CallType.Rejected];
+            //         const names = ['Alice', 'Bob', 'Charlie', 'David', 'Eva'];
 
-                    return {
-                        id: `mock-${daysOffset}-${i}`,
-                        phoneNumber: `+1555${daysOffset}${i}00`,
-                        name: names[i % names.length],
-                        dateTime: date.toISOString(),
-                        timestamp: date.getTime(),
-                        duration: Math.floor(Math.random() * 300),
-                        type: types[i % types.length],
-                        simSlot: i % 2,
-                    };
-                });
-            }
+            //         return {
+            //             id: `mock-${daysOffset}-${i}`,
+            //             phoneNumber: `+1555${daysOffset}${i}00`,
+            //             name: names[i % names.length],
+            //             dateTime: date.toISOString(),
+            //             timestamp: date.getTime(),
+            //             duration: Math.floor(Math.random() * 300),
+            //             type: types[i % types.length],
+            //             simSlot: i % 2,
+            //         };
+            //     });
+            // }
             return [];
         } catch (error) {
             console.error('Error fetching logs by day:', error);
@@ -192,7 +192,8 @@ export const CallLogService = {
             // Backend returns { success: true, data: { events: [...], lead: {...} } }
             const data = response.data?.data || response.data || {};
             const events: any[] = data.events || [];
-            console.log('Lead timeline events:', events);
+
+            // console.log('Timeline events:', events);
             return events;
         } catch (error) {
             console.warn('Failed to fetch lead timeline:', error);
@@ -225,7 +226,6 @@ const normalizeCallType = (type: string): CallType => {
         case 'INCOMING': return CallType.Incoming;
         case 'OUTGOING': return CallType.Outgoing;
         case 'MISSED': return CallType.Missed;
-        case 'REJECTED': return CallType.Rejected;
         default: return CallType.Unknown;
     }
 };

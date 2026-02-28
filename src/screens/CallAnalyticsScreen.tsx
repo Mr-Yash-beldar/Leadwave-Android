@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
+  RefreshControl,
+  Animated,
+  Modal,
   Share,
-  Alert
+  Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -16,66 +19,110 @@ import {
   Download,
   Calendar,
   Info,
-  MessageSquare
+  MessageSquare,
+  X,
 } from 'lucide-react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors } from '../theme/colors';
 import { api } from '../services/api';
 import { ReportService } from '../services/ReportService';
 import { ReportMetrics } from '../types/Report';
 
+// ─── Skeleton shimmer ─────────────────────────────────────────────────────
+const SkeletonCard = () => {
+  const anim = useRef(new Animated.Value(0.35)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 1, duration: 750, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0.35, duration: 750, useNativeDriver: true }),
+      ])
+    ).start();
+  }, [anim]);
+
+  return (
+    <Animated.View style={[styles.card, { opacity: anim }]}>
+      <View style={styles.skeletonValue} />
+      <View style={styles.skeletonLabel} />
+    </Animated.View>
+  );
+};
+
+const SkeletonSection = ({ rows = 4 }: { rows?: number }) => (
+  <>
+    <View style={styles.sectionHeader}>
+      <View style={styles.skeletonTitle} />
+    </View>
+    <View style={styles.grid}>
+      {Array.from({ length: rows }).map((_, i) => <SkeletonCard key={i} />)}
+    </View>
+  </>
+);
+
+// ─── Main Screen ──────────────────────────────────────────────────────────
 export const CallAnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [metrics, setMetrics] = useState<ReportMetrics | null>(null);
   const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'custom'>('today');
 
-  const fetchReport = useCallback(async () => {
-    setLoading(true);
+  // Custom date range
+  const [customStart, setCustomStart] = useState<Date>(() => {
+    const d = new Date(); d.setDate(d.getDate() - 7); return d;
+  });
+  const [customEnd, setCustomEnd] = useState<Date>(new Date());
+  const [showRangeModal, setShowRangeModal] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<'start' | 'end'>('start');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  const fmtDate = (d: Date) =>
+    d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  const getDateRange = useCallback(() => {
+    const now = new Date();
+    if (dateFilter === 'today') {
+      const s = now.toISOString().split('T')[0];
+      return { start: s, end: s };
+    }
+    if (dateFilter === 'yesterday') {
+      const y = new Date(now); y.setDate(now.getDate() - 1);
+      const s = y.toISOString().split('T')[0];
+      return { start: s, end: s };
+    }
+    return {
+      start: customStart.toISOString().split('T')[0],
+      end: customEnd.toISOString().split('T')[0],
+    };
+  }, [dateFilter, customStart, customEnd]);
+
+  const filterLabel =
+    dateFilter === 'today' ? 'Today'
+      : dateFilter === 'yesterday' ? 'Yesterday'
+        : `${fmtDate(customStart)} – ${fmtDate(customEnd)}`;
+
+  const fetchReport = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
     try {
-      let startDateStr, endDateStr;
-      const now = new Date();
-
-      if (dateFilter === 'today') {
-        startDateStr = now.toISOString().split('T')[0];
-        endDateStr = startDateStr;
-      } else if (dateFilter === 'yesterday') {
-        const yesterday = new Date(now);
-        yesterday.setDate(now.getDate() - 1);
-        startDateStr = yesterday.toISOString().split('T')[0];
-        endDateStr = startDateStr;
-      }
-      // Custom range logic would go here if needed
-
-      const response = await api.getCallReports(startDateStr, endDateStr);
+      const { start, end } = getDateRange();
+      const response = await api.getCallReports(start, end);
       if (response.success) {
-        const calculated = ReportService.calculateMetrics(response.data);
-        setMetrics(calculated);
+        setMetrics(ReportService.calculateMetrics(response.data));
       }
     } catch (error) {
       console.error('Failed to fetch report:', error);
-      // Fallback to local stats calculation if API fails or for testing
-      // Alert.alert('Error', 'Failed to load report data');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [dateFilter]);
+  }, [getDateRange]);
 
-  useEffect(() => {
-    fetchReport();
-  }, [fetchReport]);
+  useEffect(() => { fetchReport(); }, [fetchReport]);
 
-  const handleShare = async () => {
-    try {
-      await Share.share({
-        message: 'Shared Call Analytics Report from Leadwave app.',
-      });
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
+  // ── original sub-components ───────────────────────────────────────────
   const MetricCard = ({ label, value, subValue, icon: Icon, info }: any) => (
     <View style={styles.card}>
-      <Text style={styles.cardValue}>{value || 0}</Text>
+      <Text style={styles.cardValue}>{value ?? 0}</Text>
       <View style={styles.labelRow}>
         <Text style={styles.cardLabel}>{label}</Text>
         {Icon && <Icon size={14} color={colors.textSecondary} style={styles.cardIcon} />}
@@ -85,61 +132,136 @@ export const CallAnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation 
     </View>
   );
 
-  const SectionHeader = ({ title, info }: { title: string, info?: boolean }) => (
+  const SectionHeader = ({ title, info }: { title: string; info?: boolean }) => (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
       {info && <Info size={16} color={colors.textSecondary} style={styles.infoIcon} />}
     </View>
   );
 
-  if (loading && !metrics) {
-    return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  // ── custom date range modal ───────────────────────────────────────────
+  const CustomRangeModal = () => (
+    <Modal visible={showRangeModal} transparent animationType="slide">
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Custom Date Range</Text>
+            <TouchableOpacity onPress={() => setShowRangeModal(false)}>
+              <X size={22} color={colors.text} />
+            </TouchableOpacity>
+          </View>
 
+          <Text style={styles.modalLabel}>Start Date</Text>
+          <TouchableOpacity
+            style={styles.datePickerBtn}
+            onPress={() => { setPickerTarget('start'); setShowDatePicker(true); }}
+          >
+            <Calendar size={16} color={colors.primary} />
+            <Text style={styles.datePickerText}>{fmtDate(customStart)}</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.modalLabel}>End Date</Text>
+          <TouchableOpacity
+            style={styles.datePickerBtn}
+            onPress={() => { setPickerTarget('end'); setShowDatePicker(true); }}
+          >
+            <Calendar size={16} color={colors.primary} />
+            <Text style={styles.datePickerText}>{fmtDate(customEnd)}</Text>
+          </TouchableOpacity>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={pickerTarget === 'start' ? customStart : customEnd}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              maximumDate={new Date()}
+              onChange={(_, selected) => {
+                setShowDatePicker(Platform.OS === 'ios');
+                if (selected) {
+                  if (pickerTarget === 'start') setCustomStart(selected);
+                  else setCustomEnd(selected);
+                }
+              }}
+            />
+          )}
+
+          <TouchableOpacity
+            style={styles.applyBtn}
+            onPress={() => { setDateFilter('custom'); setShowRangeModal(false); }}
+          >
+            <Text style={styles.applyBtnText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // ── render ────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
+      {/* Header — original */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <ChevronLeft size={28} color={colors.black} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Reports</Text>
-        <View style={styles.headerActions}>
-          {/* <TouchableOpacity onPress={handleShare}>
-            <Share2 size={24} color={colors.black} style={styles.headerActionIcon} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => Alert.alert('Download', 'PDF Report generation started...')}>
-            <Download size={24} color={colors.black} />
-          </TouchableOpacity> */}
-        </View>
+        <View style={styles.headerActions} />
       </View>
 
       <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => fetchReport(true)}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
       >
-        {/* Date Selector Row */}
+        {/* Date selector row — now with 3 chips */}
         <View style={styles.dateSelectorRow}>
           <TouchableOpacity
-            style={styles.dateDisplay}
-            onPress={() => {
-              // Toggle between today/yesterday for now
-              setDateFilter(prev => prev === 'today' ? 'yesterday' : 'today');
-            }}
+            style={[styles.dateChip, dateFilter === 'today' && styles.dateChipActive]}
+            onPress={() => setDateFilter('today')}
           >
-            <Calendar size={20} color={colors.black} />
-            <Text style={styles.dateDisplayText}>{dateFilter === 'today' ? 'Today' : 'Yesterday'}</Text>
+            <Text style={[styles.dateChipText, dateFilter === 'today' && styles.dateChipTextActive]}>
+              Today
+            </Text>
           </TouchableOpacity>
-          <Text style={styles.reportSubtitle}>My Report</Text>
+          <TouchableOpacity
+            style={[styles.dateChip, dateFilter === 'yesterday' && styles.dateChipActive]}
+            onPress={() => setDateFilter('yesterday')}
+          >
+            <Text style={[styles.dateChipText, dateFilter === 'yesterday' && styles.dateChipTextActive]}>
+              Yesterday
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.dateChip, dateFilter === 'custom' && styles.dateChipActive,
+            dateFilter === 'custom' && { flexShrink: 1 }]}
+            onPress={() => setShowRangeModal(true)}
+          >
+            <Calendar size={13} color={dateFilter === 'custom' ? colors.black : colors.textSecondary} />
+            <Text style={[styles.dateChipText, { marginLeft: 4 },
+            dateFilter === 'custom' && styles.dateChipTextActive]}
+              numberOfLines={1}>
+              {dateFilter === 'custom' ? filterLabel : 'Custom'}
+            </Text>
+          </TouchableOpacity>
+          {/* <Text style={styles.reportSubtitle}>My Report</Text> */}
         </View>
 
-        {metrics && (
+        {loading ? (
           <View style={styles.reportsContainer}>
-            {/* Call Overview */}
+            <SkeletonSection rows={6} />
+            <SkeletonSection rows={4} />
+            <SkeletonSection rows={4} />
+            <SkeletonSection rows={4} />
+          </View>
+        ) : metrics ? (
+          <View style={styles.reportsContainer}>
             <SectionHeader title="Call Overview" />
             <View style={styles.grid}>
               <MetricCard label="Total Calls" value={metrics.callOverview.totalCalls} />
@@ -150,7 +272,6 @@ export const CallAnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation 
               <MetricCard label="Avg. Start Calling Time" value={metrics.callOverview.avgStartCallingTime} />
             </View>
 
-            {/* Outgoing Calls */}
             <SectionHeader title="Outgoing Calls" />
             <View style={styles.grid}>
               <MetricCard label="Total Outgoing Calls" value={metrics.outgoingCalls.totalOutgoing} />
@@ -159,7 +280,6 @@ export const CallAnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation 
               <MetricCard label="Avg. Outgoing Call Duration" value={metrics.outgoingCalls.avgOutgoingDuration} />
             </View>
 
-            {/* Incoming Calls */}
             <SectionHeader title="Incoming Calls" />
             <View style={styles.grid}>
               <MetricCard label="Total Incoming Calls" value={metrics.incomingCalls.totalIncoming} />
@@ -168,26 +288,23 @@ export const CallAnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation 
               <MetricCard label="Avg. Incoming Call Duration" value={metrics.incomingCalls.avgIncomingDuration} />
             </View>
 
-            {/* Follow up Report */}
-            <SectionHeader title="Follow up Report" info />
+            {/* <SectionHeader title="Follow up Report" info />
             <View style={styles.grid}>
               <MetricCard label="Follow Ups Due Today" value={metrics.followUpReport.dueToday} />
               <MetricCard label="Follow Ups Missed Yesterday" value={metrics.followUpReport.missedYesterday} />
               <MetricCard label="Avg. Turn Around Time" value={metrics.followUpReport.avgTurnAroundTime} info />
               <MetricCard label="Compliance%" value={metrics.followUpReport.compliance} info />
-            </View>
+            </View> */}
 
-            {/* Dispositions */}
-            <SectionHeader title="Dispositions" />
+            {/* <SectionHeader title="Dispositions" />
             <View style={styles.grid}>
               <MetricCard label="Total Disposed count" value={metrics.dispositions.totalDisposed} />
               <MetricCard label="Disposed Connected count" value={metrics.dispositions.disposedConnected} />
               <MetricCard label="Disposed Not Connected count" value={metrics.dispositions.disposedNotConnected} />
               <MetricCard label="Converted" value={metrics.dispositions.converted} />
-            </View>
+            </View> */}
 
-            {/* Activity Report */}
-            <SectionHeader title="Activity Report" />
+            {/* <SectionHeader title="Activity Report" />
             <View style={styles.grid}>
               <MetricCard label="Total Break count" value={metrics.activityReport.totalBreakCount} />
               <MetricCard label="Total Break Duration" value={metrics.activityReport.totalBreakDuration} />
@@ -195,25 +312,27 @@ export const CallAnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation 
               <MetricCard label="Avg. Form Filling Time" value={metrics.activityReport.avgFormFillingTime} />
             </View>
 
-            {/* Message Activity */}
             <SectionHeader title="Message Activity" />
             <View style={styles.messageSection}>
               <View style={[styles.center, { height: 80 }]}>
                 <MessageSquare size={32} color={colors.border} />
                 <Text style={styles.emptyText}>No Message Activity Recorded</Text>
               </View>
-            </View>
+            </View> */}
           </View>
-        )}
+        ) : null}
       </ScrollView>
+
+      <CustomRangeModal />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  // ── original styles — unchanged ───────────────────────────────────────
   container: {
     flex: 1,
-    backgroundColor: '#fdfdfdff', // Very light purple background
+    backgroundColor: '#fdfdfdff',
   },
   center: {
     justifyContent: 'center',
@@ -224,7 +343,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: colors.primary, // Purple header
+    backgroundColor: colors.primary,
   },
   headerTitle: {
     flex: 1,
@@ -237,44 +356,52 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  headerActionIcon: {
-    marginRight: 20,
-  },
   content: {
     flex: 1,
     paddingHorizontal: 16,
   },
+  // ── date selector — updated with chips ────────────────────────────────
   dateSelectorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 16,
     marginBottom: 12,
+    gap: 6,
   },
-  dateDisplay: {
+  dateChip: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.white,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     borderRadius: 8,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  dateDisplayText: {
-    marginLeft: 8,
-    fontSize: 14,
+  dateChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: '#FFF9E6',
+  },
+  dateChipText: {
+    fontSize: 13,
     fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  dateChipTextActive: {
     color: colors.black,
   },
   reportSubtitle: {
-    marginLeft: 12,
+    marginLeft: 'auto',
     fontSize: 16,
     color: '#4A4A4A',
     fontWeight: '500',
   },
+  // ── original report layout ────────────────────────────────────────────
   reportsContainer: {
     paddingBottom: 40,
   },
@@ -297,6 +424,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
+  // ── original card ─────────────────────────────────────────────────────
   card: {
     width: '49%',
     backgroundColor: colors.white,
@@ -343,5 +471,83 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 8,
-  }
+  },
+  // ── skeleton ──────────────────────────────────────────────────────────
+  skeletonValue: {
+    height: 22,
+    width: '55%',
+    backgroundColor: '#E0E0E0',
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  skeletonLabel: {
+    height: 11,
+    width: '80%',
+    backgroundColor: '#E0E0E0',
+    borderRadius: 4,
+  },
+  skeletonTitle: {
+    height: 16,
+    width: '40%',
+    backgroundColor: '#E0E0E0',
+    borderRadius: 4,
+  },
+  // ── custom date modal ─────────────────────────────────────────────────
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    paddingBottom: 36,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  modalLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  datePickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    backgroundColor: '#FAFAFA',
+  },
+  datePickerText: {
+    marginLeft: 8,
+    fontSize: 15,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  applyBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  applyBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.black,
+  },
 });
