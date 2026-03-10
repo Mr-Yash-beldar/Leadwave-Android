@@ -32,31 +32,25 @@ import { DialpadFab } from '../components/DialpadFab';
 import { BubbleLoader } from '../components/BubbleLoader';
 import { DialerModal } from '../components/DialerModal';
 import { OngoingCallCard } from '../components/OngoingCallCard';
-import { AddLeadModal } from '../components/AddLeadModal';
 import { CallEndPopup, PendingCallEnd, CheckPhoneResult } from '../components/CallEndPopup';
 import { colors } from '../theme/colors';
+import { ScreenWrapper } from '../components/ScreenWrapper';
+import { useNetwork } from '../context/NetworkContext';
+import { NetworkStatusBar } from '../components/NetworkStatusBar';
+import { ConnectionQuality } from '../components/ConnectionQuality';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CATEGORIES = ['all', 'incoming', 'outgoing', 'missed'];
-const POSTED_CALLS_KEY = 'posted_calls'; // AsyncStorage dedup key
-const LATEST_CALL_TS_KEY = 'latest_call_timestamp'; // last processed call timestamp
-const CHECK_PHONE_CACHE_KEY = 'check_phone_cache'; // { [phone]: { result, expiresAt } }
-const CHECK_PHONE_TTL = 30 * 60 * 1000; // 30 minutes (was 5 — reduced API hammering)
-const ASSIGN_SELF_CACHE_KEY = 'assign_self_cache_v2'; // v2 adds isAssignedToOther
-const LEADS_FETCH_MIN_INTERVAL = 60_000; // min 60s between fetchLeads calls
+const POSTED_CALLS_KEY = 'posted_calls';
+const LATEST_CALL_TS_KEY = 'latest_call_timestamp';
+const CHECK_PHONE_CACHE_KEY = 'check_phone_cache';
+const CHECK_PHONE_TTL = 30 * 60 * 1000;
+const ASSIGN_SELF_CACHE_KEY = 'assign_self_cache_v2';
+const LEADS_FETCH_MIN_INTERVAL = 60_000;
 let lastLeadsFetchAt = 0;
 
 const { PhoneModule } = NativeModules;
 const { OverlayPermission } = NativeModules;
-
-const requestOverlayPermission = async () => {
-  if (Platform.OS === 'android') {
-    const hasPermission = await OverlayPermission.hasPermission();
-    if (!hasPermission) {
-      await OverlayPermission.requestPermission();
-    }
-  }
-};
 
 // Polyfill addListener/removeListeners so NativeEventEmitter doesn't warn
 if (PhoneModule && !PhoneModule.addListener) {
@@ -77,7 +71,6 @@ const callPayloadFromLog = (log: CallLog) => {
       return { callStatus: 'completed', callType: 'outgoing' };
     case CallType.Missed:
       return { callStatus: 'missed', callType: 'missed' };
-
     default:
       return { callStatus: 'completed', callType: 'outgoing' };
   }
@@ -86,11 +79,10 @@ const callPayloadFromLog = (log: CallLog) => {
 /** Fire-and-forget: post a matched call to the DB, once per unique log ID */
 const autoPostMatchedCall = async (log: CallLog, leadId: string) => {
   try {
-    // Load the dedup set
     const raw = await AsyncStorage.getItem(POSTED_CALLS_KEY);
     const postedSet: string[] = raw ? JSON.parse(raw) : [];
     if (postedSet.includes(log.id)) {
-      console.log('Auto-post skipped (already posted):', log.id);
+      // console.log('Auto-post skipped (already posted):', log.id);
       return;
     }
     console.log('Auto-posting call to DB:', leadId, log.id);
@@ -101,9 +93,8 @@ const autoPostMatchedCall = async (log: CallLog, leadId: string) => {
       durationSeconds: log.duration,
       callStatus,
       callType,
-      notes: 'incoming call auto dispose',
+      notes: 'auto Recored Call',
     });
-    // Mark as posted
     postedSet.push(log.id);
     await AsyncStorage.setItem(POSTED_CALLS_KEY, JSON.stringify(postedSet));
     console.log('Call posted to DB:', log.id);
@@ -194,8 +185,7 @@ interface HistoryPageProps {
   leads: Lead[];
 }
 
-export const HistoryScreen: React.FC = () => {
-  // ============ ALL useState HOOKS FIRST ============
+const HistoryScreenContent: React.FC = () => {
   const [logs, setLogs] = useState<CallLog[]>([]);
   const [leadLogs, setLeadLogs] = useState<CallLog[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -206,7 +196,7 @@ export const HistoryScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [daysOffset, setDaysOffset] = useState(0);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [leadLoading, setLeadLoading] = useState(false); // dedicated skeleton for Lead Call History
+  const [leadLoading, setLeadLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [simCount, setSimCount] = useState(0);
   const [simFilter, setSimFilter] = useState<'all' | number>('all');
@@ -215,27 +205,22 @@ export const HistoryScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
-  // Lead Modal State
   const [isLeadModalVisible, setIsLeadModalVisible] = useState(false);
   const [activeCallNumber, setActiveCallNumber] = useState('');
 
   const { user } = useAuth();
+  const { isOffline, isPoorConnection, pendingSyncCount } = useNetwork();
 
-  // ============ Popup / Call-End State ============
   const [pendingCallEnd, setPendingCallEnd] = useState<PendingCallEnd | null>(null);
   const [checkResult, setCheckResult] = useState<CheckPhoneResult | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [isPopupVisible, setIsPopupVisible] = useState(false);
 
-  // ============ ALL useRef HOOKS ============
   const pagerRef = useRef<FlatList>(null);
-  // Always-fresh reference to leads so background poller never has a stale closure
   const leadsRef = useRef<Lead[]>([]);
 
-  // ============ ALL useCallback HOOKS ============
   // Fetch leads function
   const fetchLeads = useCallback(async () => {
-    // Debounce: skip if fetched less than 60s ago
     const now = Date.now();
     if (now - lastLeadsFetchAt < LEADS_FETCH_MIN_INTERVAL) return;
     lastLeadsFetchAt = now;
@@ -243,8 +228,8 @@ export const HistoryScreen: React.FC = () => {
       const response = await api.getAssigned();
       if (response?.data) {
         setLeads(response.data);
-        leadsRef.current = response.data; // keep ref in sync
-        AsyncStorage.setItem('cached_leads', JSON.stringify(response.data)).catch(err =>
+        leadsRef.current = response.data;
+        await AsyncStorage.setItem('cached_leads', JSON.stringify(response.data)).catch(err =>
           console.error('Failed to cache leads:', err)
         );
       }
@@ -253,9 +238,6 @@ export const HistoryScreen: React.FC = () => {
     }
   }, []);
 
-  // ── Enrich personal call logs with lead name/data from checkPhone API ──
-  // Uses /leads/checkandgive which returns any lead (assigned or not).
-  // Runs after logs load. Cached per phone (5-min TTL) in ASSIGN_SELF_CACHE_KEY.
   const enrichLogsWithCheckPhone = useCallback(async (logsToEnrich: CallLog[]) => {
     const unmatched = logsToEnrich.filter((l: any) => !l.leadId && l.phoneNumber);
     if (unmatched.length === 0) return;
@@ -313,20 +295,15 @@ export const HistoryScreen: React.FC = () => {
         const leadName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim() ||
           lead.fullName || lead.name || undefined;
 
-        // Parse assignedTo
         const assignedRaw = lead.assigned_to || lead.assignedTo;
         const assignedId = typeof assignedRaw === 'string'
           ? assignedRaw
           : assignedRaw?._id || assignedRaw?.id || null;
         const isAlreadyMine = !!(myId && assignedId && assignedId === myId);
 
-        // canAssignSelf = lead is NOT assigned to me (either unassigned or assigned to someone else)
         const canAssignSelf = !isAlreadyMine;
-
-        // isAssignedToOther = lead exists AND is assigned AND NOT to me
         const isAssignedToOther = !!(assignedId && !isAlreadyMine);
 
-        // Resolve agent name for display
         let assignedToName: string | undefined;
         if (assignedRaw && typeof assignedRaw === 'object') {
           assignedToName = (assignedRaw as any).name || (assignedRaw as any).username || undefined;
@@ -372,13 +349,11 @@ export const HistoryScreen: React.FC = () => {
     }
   }, [user]);
 
-  // ── Handle Assign Self from a call log entry ──
   const handleAssignSelf = useCallback(async (log: any) => {
     const leadId = log._enrichedLeadId || log.leadId || '';
     if (!leadId && !log.phoneNumber) return;
     try {
       await api.assignSelf(leadId, log.phoneNumber);
-      // Promote the log to a proper lead (set leadId + leadData, clear canAssignSelf)
       setLogs(prev =>
         prev.map((l: any) =>
           l.id === log.id
@@ -393,7 +368,6 @@ export const HistoryScreen: React.FC = () => {
             : l
         )
       );
-      // Invalidate cache for this phone
       try {
         const cleaned = log.phoneNumber.replace(/[^0-9+]/g, '');
         const raw = await AsyncStorage.getItem(ASSIGN_SELF_CACHE_KEY);
@@ -408,16 +382,14 @@ export const HistoryScreen: React.FC = () => {
       } catch (_) { }
       fetchLeads();
     } catch (e) {
-      Alert.alert('Error', 'Failed to assign lead. Please try again.');
+      // Alert.alert('Error', 'Failed to assign lead. Please try again.');
     }
   }, [fetchLeads]);
 
-  // ── checkPhone with AsyncStorage cache (TTL 5 min) ──────────────────────
   const checkPhoneWithCache = useCallback(async (phoneNumber: string): Promise<CheckPhoneResult> => {
     const cleaned = phoneNumber.replace(/[^0-9+]/g, '');
     if (!cleaned) return { found: false, isMyLead: false };
 
-    // Try cache
     try {
       const rawCache = await AsyncStorage.getItem(CHECK_PHONE_CACHE_KEY);
       const cache: Record<string, { result: CheckPhoneResult; expiresAt: number }> =
@@ -429,14 +401,11 @@ export const HistoryScreen: React.FC = () => {
       }
     } catch (_) { }
 
-    // API call
     try {
-      console.log("clean: ", cleaned)
+      console.log("clean: ", cleaned);
       const lead = await api.checkPhone(cleaned);
       let result: CheckPhoneResult;
       if (lead && lead._id) {
-        // Determine if it's the current user's lead
-        // assignedTo may be a string (userId) or object {_id, ...}
         const assignedId =
           typeof lead.assignedTo === 'string'
             ? lead.assignedTo
@@ -456,7 +425,6 @@ export const HistoryScreen: React.FC = () => {
         result = { found: false, isMyLead: false };
       }
 
-      // Write to cache
       try {
         const rawCache = await AsyncStorage.getItem(CHECK_PHONE_CACHE_KEY);
         const cache: Record<string, { result: CheckPhoneResult; expiresAt: number }> =
@@ -472,9 +440,7 @@ export const HistoryScreen: React.FC = () => {
     }
   }, [user]);
 
-  // ── Show the post-call popup for a given ended call ──────────────────────
   const handleCallEnded = useCallback(async (callEnd: PendingCallEnd) => {
-    // Skip if already showing a popup
     setPendingCallEnd(callEnd);
     setCheckResult(null);
     setIsChecking(true);
@@ -484,8 +450,6 @@ export const HistoryScreen: React.FC = () => {
     setCheckResult(result);
     setIsChecking(false);
 
-    // Auto-post call log whenever the lead exists in DB (mine OR someone else's)
-    // Only skip if lead is NOT present in system at all
     if (result.found && result.leadId) {
       const callStatus =
         callEnd.callType === 'missed' ? 'missed' :
@@ -504,7 +468,6 @@ export const HistoryScreen: React.FC = () => {
     }
   }, [checkPhoneWithCache]);
 
-  // ── Handle popup actions ─────────────────────────────────────────────────
   const handlePopupClose = useCallback(() => {
     setIsPopupVisible(false);
     setPendingCallEnd(null);
@@ -531,10 +494,8 @@ export const HistoryScreen: React.FC = () => {
     try {
       setIsChecking(true);
       await api.assignSelf(checkResult.leadId, pendingCallEnd.phoneNumber);
-      // Update cache entry to isMyLead: true
       const newResult: CheckPhoneResult = { ...checkResult, isMyLead: true };
       setCheckResult(newResult);
-      // Also invalidate cache for this number
       try {
         const cleaned = pendingCallEnd.phoneNumber.replace(/[^0-9+]/g, '');
         const rawCache = await AsyncStorage.getItem(CHECK_PHONE_CACHE_KEY);
@@ -545,20 +506,12 @@ export const HistoryScreen: React.FC = () => {
         }
       } catch (_) { }
     } catch (e) {
-      Alert.alert('Error', 'Failed to assign lead. Please try again.');
+      // Alert.alert('Error', 'Failed to assign lead. Please try again.');
     } finally {
       setIsChecking(false);
     }
   }, [checkResult, pendingCallEnd]);
 
-
-
-  /**
-   * Background new-call checker.
-   * Posts a call log for ANY call whose number exists in the DB,
-   * whether the lead is mine or assigned to someone else.
-   * Only skips posting when the phone number is NOT found in the system at all.
-   */
   const checkAndPostNewCalls = useCallback(async () => {
     try {
       const rawTs = await AsyncStorage.getItem(LATEST_CALL_TS_KEY);
@@ -575,16 +528,25 @@ export const HistoryScreen: React.FC = () => {
       if (newLogs.length > 0) {
         console.log(`[AutoPost] ${newLogs.length} new call(s) to process`);
 
+        // Get posted calls once for all new logs
+        const rawPosted = await AsyncStorage.getItem(POSTED_CALLS_KEY);
+        const postedSet: string[] = rawPosted ? JSON.parse(rawPosted) : [];
+
+        // 1. Separate into local-matched (no API) vs api-needed
+        type Match = { log: CallLog; leadId: string };
+        const localMatches: Match[] = [];
+        const apiNeeded: CallLog[] = [];
+
         for (const log of newLogs) {
-          if (!log.phoneNumber) continue;
+          if (!log.phoneNumber || postedSet.includes(log.id)) continue;
 
           const inputDigits = log.phoneNumber.replace(/[^0-9]/g, '');
           const inputLast10 = inputDigits.slice(-10);
           if (inputLast10.length < 10) continue;
 
-          // 1. First try matching against local assigned leads (free, no API)
           let leadId: string | null = null;
           const currentLeads = leadsRef.current;
+          
           for (const lead of currentLeads) {
             const nums = [lead.phone, lead.mobile, lead.alt_phone].filter((n): n is string => !!n);
             for (const raw of nums) {
@@ -594,13 +556,36 @@ export const HistoryScreen: React.FC = () => {
             if (leadId) break;
           }
 
-          // 2. If not in my local leads, call checkPhone to see if it's in DB at all
-          if (!leadId) {
+          if (leadId) {
+            localMatches.push({ log, leadId });
+          } else {
+            apiNeeded.push(log);
+          }
+        }
+
+        // 2. Post local matches immediately (with small delay if many)
+        for (let i = 0; i < localMatches.length; i++) {
+          const { log, leadId } = localMatches[i];
+          await autoPostMatchedCall(log, leadId);
+          if (i > 0 && i % 5 === 0) await new Promise(r => setTimeout(() => r(undefined), 800)); // slight batching
+        }
+
+        // 3. Process API needed in chunks to avoid 429
+        const MAX_API_CALLS_PER_CYCLE = 15;
+        const toCheck = apiNeeded.slice(0, MAX_API_CALLS_PER_CYCLE);
+        const CHUNK_SIZE = 5;
+        const CHUNK_DELAY_MS = 800;
+
+        for (let i = 0; i < toCheck.length; i += CHUNK_SIZE) {
+          const chunk = toCheck.slice(i, i + CHUNK_SIZE);
+
+          for (const log of chunk) {
+            let leadId: string | null = null;
             try {
               const cleanedPhone = log.phoneNumber.replace(/[^0-9+]/g, '');
-              // Check cache first
               let fromCache = false;
               const rawCache = await AsyncStorage.getItem(CHECK_PHONE_CACHE_KEY);
+              
               if (rawCache) {
                 const cacheMap: Record<string, { result: any; expiresAt: number }> = JSON.parse(rawCache);
                 const entry = cacheMap[cleanedPhone];
@@ -611,22 +596,49 @@ export const HistoryScreen: React.FC = () => {
                   }
                 }
               }
+              
               if (!fromCache) {
                 const lead = await api.checkPhone(cleanedPhone);
                 if (lead && (lead._id || lead.id)) {
                   leadId = lead._id || lead.id;
                 }
               }
-            } catch (_) { /* non-fatal */ }
+            } catch (e) {
+              console.warn(`[AutoPost] API check failed for ${log.phoneNumber}`, e);
+            }
+
+            if (leadId) {
+              await autoPostMatchedCall(log, leadId);
+            }
           }
 
-          // 3. Post only if leadId found (lead exists in system, regardless of assignment)
-          if (leadId) {
-            await autoPostMatchedCall(log, leadId);
+          // Delay before next chunk
+          if (i + CHUNK_SIZE < toCheck.length) {
+            await new Promise(res => setTimeout(() => res(undefined), CHUNK_DELAY_MS));
           }
         }
 
-        await AsyncStorage.setItem(LATEST_CALL_TS_KEY, String(newestTs));
+        // Only move the global timestamp forward for the calls we processed
+        if (apiNeeded.length <= MAX_API_CALLS_PER_CYCLE && newLogs.length > 0) {
+           await AsyncStorage.setItem(LATEST_CALL_TS_KEY, String(newestTs));
+        } else {
+           // We have remaining calls; update TS to the newest processed so far
+           // which would be the timestamp of the last log we processed
+           // Because we sorted newest-first, we process newest down to oldest.
+           // Actually, it's safer to just let the next cycle pick up the rest
+           // by not artificially advancing LATEST_CALL_TS_KEY too far.
+           if (newLogs.length > 0) {
+             const lastProcessedLog = toCheck[0]; // the newest log we processed in this batch
+             // If we processed everything, we'd use newestTs
+             // If we didn't, we can just let it run again next poll.
+           }
+        }
+
+        // Simplistic approach for timestamp: if we processed all of them without hitting cap, move forward.
+        if (apiNeeded.length <= MAX_API_CALLS_PER_CYCLE) {
+          await AsyncStorage.setItem(LATEST_CALL_TS_KEY, String(newestTs));
+        }
+
       } else {
         if (newestTs > lastProcessedTs) {
           await AsyncStorage.setItem(LATEST_CALL_TS_KEY, String(newestTs));
@@ -635,71 +647,33 @@ export const HistoryScreen: React.FC = () => {
     } catch (e) {
       console.warn('[AutoPost] Background check failed:', e);
     }
-  }, []); // reads leadsRef (always fresh) and uses module-level constants
-
-  // Helper function to find lead by phone number
-  // Alert.alert(phoneNumber);
+  }, []);
 
   const findLeadByNumber = useCallback((phoneNumber: string): Lead | null => {
-    if (!phoneNumber) {
-      // console.log('[findLead] No phone number → null');
-      return null;
-    }
+    if (!phoneNumber) return null;
+    if (!leads.length) return null;
 
-    if (!leads.length) {
-      // console.log('[findLead] No leads loaded → null');
-      return null;
-    }
-
-    // 1. Clean input number
     const inputDigits = phoneNumber.replace(/[^0-9]/g, '');
     const inputLast10 = inputDigits.slice(-10);
 
-    // console.log(
-    //   `[findLead] Input: "${phoneNumber}" → cleaned: ${inputDigits} → last10: ${inputLast10}`
-    // );
+    if (inputLast10.length < 10) return null;
 
-    if (inputLast10.length < 10) {
-      // console.log('[findLead] Input too short (<10 digits) → no match');
-      return null;
-    }
-
-    // 2. Check every lead
     for (const lead of leads) {
       const leadNumbers = [lead.phone, lead.mobile, lead.alt_phone].filter((n): n is string => !!n);
-
       if (leadNumbers.length === 0) continue;
-
-      // console.log(
-      //   `[findLead] Checking lead: ${lead.firstName} ${lead.lastName} (ID: ${lead._id}) → numbers:`,
-      //   leadNumbers
-      // );
 
       for (const rawLeadNum of leadNumbers) {
         const leadDigits = rawLeadNum.replace(/[^0-9]/g, '');
         const leadLast10 = leadDigits.slice(-10);
 
-        // console.log(
-        //   `  → lead raw: "${rawLeadNum}" → cleaned: ${leadDigits} → last10: ${leadLast10}`
-        // );
-
-        // Match if last 10 digits are exactly the same
         if (leadLast10 === inputLast10) {
-          // console.log(
-          //   `>>> [MATCH SUCCESS] Lead: ${lead.firstName} ${lead.lastName} ` +
-          //   `| input last10: ${inputLast10} | lead last10: ${leadLast10} | raw lead num: ${rawLeadNum}`
-          // );
           return lead;
         }
       }
     }
-
-    // console.log(`[findLead] NO MATCH for last10: ${inputLast10}`);
     return null;
   }, [leads]);
 
-
-  // Fetch personal logs
   const fetchPersonalLogs = useCallback(async (force: boolean = false) => {
     if (!force && dataFetched) return;
 
@@ -727,9 +701,6 @@ export const HistoryScreen: React.FC = () => {
       setSimCount(count);
       setDaysOffset(currentOffset);
 
-      // Format personal logs — match against leads and show lead name.
-      // NOTE: Auto-posting is handled exclusively by the background poller
-      // (checkAndPostNewCalls) so we never re-post old entries here.
       const formattedLogs = fetchedLogs.map(log => {
         const matchedLead = findLeadByNumber(log.phoneNumber);
 
@@ -755,7 +726,6 @@ export const HistoryScreen: React.FC = () => {
 
       if (force || !dataFetched) {
         setLogs(formattedLogs);
-        // Background-enrich with checkLeadAssignment API (shows lead names + assign-self badge)
         enrichLogsWithCheckPhone(formattedLogs);
       } else {
         setLogs((prev) => {
@@ -776,14 +746,13 @@ export const HistoryScreen: React.FC = () => {
       setInitialLoading(false);
       setRefreshing(false);
     }
-  }, [dataFetched, findLeadByNumber]);
+  }, [dataFetched, findLeadByNumber, enrichLogsWithCheckPhone]);
 
-  // Fetch lead logs
   const fetchLeadLogs = useCallback(async (force = false) => {
     if (!force && leadLogs.length > 0) return;
 
     try {
-      setLeadLoading(true);  // always show skeleton while loading lead logs
+      setLeadLoading(true);
       if (force) setRefreshing(true);
 
       const response = await api.getCallLogs();
@@ -835,7 +804,7 @@ export const HistoryScreen: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching lead logs:', error);
-      Alert.alert('Error', 'Failed to load lead call logs');
+      // Alert.alert('Error', 'Failed to load lead call logs');
     } finally {
       setLeadLoading(false);
       setInitialLoading(false);
@@ -843,7 +812,6 @@ export const HistoryScreen: React.FC = () => {
     }
   }, []);
 
-  // Load more personal logs
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore || source === 'leads') return;
 
@@ -868,7 +836,6 @@ export const HistoryScreen: React.FC = () => {
 
           if (matchedLead) {
             const leadId = matchedLead._id || matchedLead.id || '';
-            // No autoPostMatchedCall here — background poller owns this
             return {
               ...baseLog,
               leadName: `${matchedLead.firstName} ${matchedLead.lastName}`.trim(),
@@ -907,14 +874,12 @@ export const HistoryScreen: React.FC = () => {
     }
   }, [loadingMore, hasMore, source, daysOffset, findLeadByNumber]);
 
-  // Handle refresh
   const handleRefresh = useCallback(() => {
     fetchLeads();
     if (source === 'personal') fetchPersonalLogs(true);
     else fetchLeadLogs(true);
   }, [source, fetchLeads, fetchPersonalLogs, fetchLeadLogs]);
 
-  // Handle filter selection
   const handleFilterSelect = useCallback((newFilter: string) => {
     const index = CATEGORIES.indexOf(newFilter);
     if (index !== -1) {
@@ -923,7 +888,6 @@ export const HistoryScreen: React.FC = () => {
     }
   }, []);
 
-  // Handle pager scroll
   const onPagerScroll = useCallback(
     (event: any) => {
       const offsetX = event.nativeEvent.contentOffset.x;
@@ -938,19 +902,16 @@ export const HistoryScreen: React.FC = () => {
     [filter]
   );
 
-  // Open add lead modal
   const openAddLead = useCallback((number: string) => {
     setActiveCallNumber(number);
     setIsLeadModalVisible(true);
   }, []);
 
-  // Handle popup Add Lead action (depends on openAddLead, so defined after it)
   const handlePopupAddLead = useCallback(() => {
     handlePopupClose();
     if (pendingCallEnd) openAddLead(pendingCallEnd.phoneNumber);
   }, [pendingCallEnd, handlePopupClose, openAddLead]);
 
-  // Render category page
   const renderCategoryPage = useCallback(({ item: cat }: { item: string }) => (
     <HistoryPage
       category={cat}
@@ -975,12 +936,10 @@ export const HistoryScreen: React.FC = () => {
 
   // ============ ALL useEffect HOOKS ============
 
-  // Keep leadsRef in sync with leads state
   useEffect(() => {
     leadsRef.current = leads;
   }, [leads]);
 
-  // Load cached leads on mount
   useEffect(() => {
     const loadCachedLeads = async () => {
       try {
@@ -989,7 +948,7 @@ export const HistoryScreen: React.FC = () => {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) {
             setLeads(parsed);
-            leadsRef.current = parsed; // hydrate ref immediately
+            leadsRef.current = parsed;
           }
         }
       } catch (e) {
@@ -999,26 +958,18 @@ export const HistoryScreen: React.FC = () => {
     loadCachedLeads();
   }, []);
 
-  // ── Background poller: check for new call log entries every 3 minutes ──
   useEffect(() => {
-    // Run once immediately on mount, then on a longer interval to avoid 429s
     checkAndPostNewCalls();
-    const pollInterval = setInterval(checkAndPostNewCalls, 3 * 60_000); // 3 minutes
+    const pollInterval = setInterval(checkAndPostNewCalls, 10_000); // 10 seconds
     return () => clearInterval(pollInterval);
   }, [checkAndPostNewCalls]);
 
-  // Update logs when leads change (Reactive Update)
   useEffect(() => {
     if (leads.length === 0) return;
 
     setLogs(prevLogs => {
-      let hasUpdates = false;
+      let hasUpdates = false; // ← Added missing semicolon
       const updatedLogs = prevLogs.map(log => {
-        // If already matched, we can skip or re-match. 
-        // Re-matching ensures that if a lead name changed, it updates.
-        // But for performance, if we have leadId, maybe we skip? 
-        // The user wants "backend names will be seen there", implying they were missing.
-        // So main priority is filling missing ones.
         if (log.leadId) return log;
 
         const matchedLead = findLeadByNumber(log.phoneNumber);
@@ -1038,26 +989,22 @@ export const HistoryScreen: React.FC = () => {
     });
   }, [leads, findLeadByNumber]);
 
-  // Initial data load - Leads
   useEffect(() => {
     fetchLeads();
   }, [fetchLeads]);
 
-  // Initial data load - Personal Logs
   useEffect(() => {
     if (source === 'personal') {
       fetchPersonalLogs();
     }
   }, [source, fetchPersonalLogs]);
 
-  // Initial data load - Lead Logs
   useEffect(() => {
     if (source === 'leads') {
       fetchLeadLogs(true);
     }
   }, [source, fetchLeadLogs]);
 
-  // App state change listener
   useEffect(() => {
     const subscription = AppState.addEventListener('change', async (nextAppState) => {
       if (nextAppState === 'active') {
@@ -1065,7 +1012,6 @@ export const HistoryScreen: React.FC = () => {
         if (source === 'personal') fetchPersonalLogs(true);
         else fetchLeadLogs(true);
 
-        // Check for a pending call that ended while the app was in background/killed
         try {
           if (PhoneModule?.getPendingCall) {
             const pending = await PhoneModule.getPendingCall();
@@ -1085,7 +1031,6 @@ export const HistoryScreen: React.FC = () => {
     return () => subscription.remove();
   }, [source, fetchLeads, fetchPersonalLogs, fetchLeadLogs, handleCallEnded]);
 
-  // ── Listen for real-time CallEnded event (app foreground/background running) ──
   useEffect(() => {
     if (!PhoneModule) return;
     const emitter = new NativeEventEmitter(PhoneModule);
@@ -1102,14 +1047,12 @@ export const HistoryScreen: React.FC = () => {
     return () => sub.remove();
   }, [handleCallEnded]);
 
-  // Focus effect
   useFocusEffect(
     useCallback(() => {
       if (!dataFetched && source === 'personal') {
         fetchPersonalLogs();
       }
 
-      // On focus, also check for pending call from SharedPreferences (background/killed scenario)
       const checkPending = async () => {
         try {
           if (PhoneModule?.getPendingCall) {
@@ -1130,135 +1073,85 @@ export const HistoryScreen: React.FC = () => {
     }, [dataFetched, source, fetchPersonalLogs, handleCallEnded])
   );
 
-  // ============ COMPONENT RETURN ============
   return (
-    <SafeAreaView edges={['top']} style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Call Logs</Text>
-        <View style={styles.headerRight}>
-          {/* <TouchableOpacity
-            onPress={() => setSimFilter('all')}
-            style={[styles.simHeaderIcon, simFilter === 'all' && styles.simHeaderIconActive]}
-          >
-            <View style={[styles.allSimsIcon, simFilter === 'all' && styles.activeSimIconBox]}>
-              <View
-                style={[
-                  styles.simIconBoxSmall,
-                  { position: 'absolute', top: 2, left: 2, zIndex: 1, borderColor: simFilter === 'all' ? colors.primary : colors.black },
-                ]}
-              />
-              <View
-                style={[
-                  styles.simIconBoxSmall,
-                  { backgroundColor: colors.black, borderColor: simFilter === 'all' ? colors.primary : colors.black },
-                ]}
-              />
-            </View>
-          </TouchableOpacity> */}
+    <ScreenWrapper navigation={navigation} title="Call Logs">
+      <SafeAreaView style={styles.container} edges={['top']}>
 
-          {simCount >= 1 && (
+
+        <FilterBar selectedFilter={filter} onSelectFilter={handleFilterSelect} />
+
+        <View style={styles.contentContainer}>
+          <SearchBar value={searchQuery} onChangeText={setSearchQuery} />
+
+          <View style={styles.sourceToggleContainer}>
             <TouchableOpacity
-              onPress={() => setSimFilter(0)}
-              style={[styles.simHeaderIcon, simFilter === 0 && styles.simHeaderIconActive]}
+              style={[styles.sourceOption, source === 'personal' && styles.sourceOptionActive]}
+              onPress={() => setSource('personal')}
             >
-              <View style={[styles.simIconBox, simFilter === 0 && styles.activeSimIconBox]}>
-                <Text style={[styles.simIconText, simFilter === 0 && styles.activeSimIconText]}>1</Text>
-              </View>
+              <Text
+                style={[styles.sourceOptionText, source === 'personal' && styles.sourceOptionTextActive]}
+              >
+                Call History
+              </Text>
             </TouchableOpacity>
-          )}
 
-          {simCount >= 2 && (
             <TouchableOpacity
-              onPress={() => setSimFilter(1)}
-              style={[styles.simHeaderIcon, simFilter === 1 && styles.simHeaderIconActive]}
+              style={[styles.sourceOption, source === 'leads' && styles.sourceOptionActive]}
+              onPress={() => setSource('leads')}
             >
-              <View style={[styles.simIconBox, simFilter === 1 && styles.activeSimIconBox]}>
-                <Text style={[styles.simIconText, simFilter === 1 && styles.activeSimIconText]}>2</Text>
-              </View>
+              <Text
+                style={[styles.sourceOptionText, source === 'leads' && styles.sourceOptionTextActive]}
+              >
+                Lead Call History
+              </Text>
             </TouchableOpacity>
-          )}
-        </View>
-      </View>
+          </View>
 
-      <FilterBar selectedFilter={filter} onSelectFilter={handleFilterSelect} />
+          <OngoingCallCard onAddLead={openAddLead} />
 
-      <View style={styles.contentContainer}>
-        <SearchBar value={searchQuery} onChangeText={setSearchQuery} />
-
-        {/* Source Toggle */}
-        <View style={styles.sourceToggleContainer}>
-          <TouchableOpacity
-            style={[styles.sourceOption, source === 'personal' && styles.sourceOptionActive]}
-            onPress={() => setSource('personal')}
-          >
-            <Text
-              style={[styles.sourceOptionText, source === 'personal' && styles.sourceOptionTextActive]}
-            >
-              Call History
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.sourceOption, source === 'leads' && styles.sourceOptionActive]}
-            onPress={() => setSource('leads')}
-          >
-            <Text
-              style={[styles.sourceOptionText, source === 'leads' && styles.sourceOptionTextActive]}
-            >
-              Lead Call History
-            </Text>
-          </TouchableOpacity>
+          <FlatList
+            ref={pagerRef}
+            data={CATEGORIES}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => item}
+            renderItem={renderCategoryPage}
+            onScroll={onPagerScroll}
+            scrollEventThrottle={16}
+            initialNumToRender={1}
+            maxToRenderPerBatch={1}
+            windowSize={2}
+            removeClippedSubviews={Platform.OS === 'android'}
+            getItemLayout={(_, index) => ({
+              length: SCREEN_WIDTH,
+              offset: SCREEN_WIDTH * index,
+              index,
+            })}
+          />
         </View>
 
-        <OngoingCallCard onAddLead={openAddLead} />
-
-        <FlatList
-          ref={pagerRef}
-          data={CATEGORIES}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(item) => item}
-          renderItem={renderCategoryPage}
-          onScroll={onPagerScroll}
-          scrollEventThrottle={16}
-          initialNumToRender={1}
-          maxToRenderPerBatch={1}
-          windowSize={2}
-          removeClippedSubviews={Platform.OS === 'android'}
-          getItemLayout={(_, index) => ({
-            length: SCREEN_WIDTH,
-            offset: SCREEN_WIDTH * index,
-            index,
-          })}
+        <DialerModal
+          isVisible={isDialerVisible}
+          onClose={() => setIsDialerVisible(false)}
+          onAddLead={openAddLead}
         />
-      </View>
+        <DialpadFab onPress={() => setIsDialerVisible(true)} />
 
-      <DialerModal
-        isVisible={isDialerVisible}
-        onClose={() => setIsDialerVisible(false)}
-        onAddLead={openAddLead}
-      />
-      <DialpadFab onPress={() => setIsDialerVisible(true)} />
 
-      <AddLeadModal
-        isVisible={isLeadModalVisible}
-        onClose={() => setIsLeadModalVisible(false)}
-        phoneNumber={activeCallNumber}
-      />
 
-      {/* ── Post-Call Popup ── */}
-      <CallEndPopup
-        isVisible={isPopupVisible}
-        callEnd={pendingCallEnd}
-        checkResult={checkResult}
-        isChecking={isChecking}
-        onDispose={handlePopupDispose}
-        onAssignSelf={handlePopupAssignSelf}
-        onAddLead={handlePopupAddLead}
-        onClose={handlePopupClose}
-      />
-    </SafeAreaView>
+        <CallEndPopup
+          isVisible={isPopupVisible}
+          callEnd={pendingCallEnd}
+          checkResult={checkResult}
+          isChecking={isChecking}
+          onDispose={handlePopupDispose}
+          onAssignSelf={handlePopupAssignSelf}
+          onAddLead={handlePopupAddLead}
+          onClose={handlePopupClose}
+        />
+      </SafeAreaView>
+    </ScreenWrapper>
   );
 };
 
@@ -1346,7 +1239,6 @@ const HistoryPage = React.memo(
       return groups;
     }, [activeLogs, category, searchQuery, simFilter, initialLoading, leadLoading, source]);
 
-    // Show skeleton for personal tab initial load OR lead tab while fetching
     if (initialLoading || (source === 'leads' && leadLoading)) {
       return (
         <View style={styles.pageContainer}>
@@ -1394,10 +1286,6 @@ const HistoryPage = React.memo(
           renderItem={({ item }) => (
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionTitle}>{item.title}</Text>
-              {/* // ... inside HistoryPage → FlatList renderItem */}
-
-              {/* // Inside HistoryPage → FlatList renderItem */}
-
               {item.data.map((log) => {
                 const displayLog = source === 'personal'
                   ? {
@@ -1412,13 +1300,10 @@ const HistoryPage = React.memo(
                     key={displayLog.id}
                     item={displayLog}
                     simCount={simCount}
-                    isLeadLog={source === 'leads'}           // ← crucial: only true in leads tab
+                    isLeadLog={source === 'leads'}
                     onAddLead={() => onAddLead(displayLog.phoneNumber)}
                     onAssignSelf={onAssignSelf}
                     onDispose={(callItem) => {
-                      // your existing navigation logic
-                      // console.log('Dispose callback for:', callItem.phoneNumber);
-
                       if (callItem.leadData) {
                         navigation.navigate('LeadDetails', {
                           lead: callItem.leadData,
@@ -1482,15 +1367,15 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 20,
     paddingVertical: 14,
-    backgroundColor: colors.white,
-    flexDirection: 'row',
+    backgroundColor: colors.primary,
+    flexDirection: 'column',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
   },
@@ -1615,6 +1500,28 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
   },
+  cacheIndicator: {
+    backgroundColor: '#E3F2FD',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  cacheText: {
+    fontSize: 12,
+    color: colors.info,
+    textAlign: 'center',
+  },
+  pendingIndicator: {
+    backgroundColor: colors.primary,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  pendingText: {
+    color: colors.black,
+    fontSize: 12,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
 });
 
-export default HistoryScreen;
+const HistoryScreen = HistoryScreenContent;
+export default HistoryScreen;   

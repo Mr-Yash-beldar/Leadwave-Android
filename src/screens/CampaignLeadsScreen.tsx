@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator }
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { colors } from '../theme/colors';
 import { campaignService } from '../services/campaignService';
-
+import { ScreenWrapper } from '../components/ScreenWrapper';
 // Actually the "Start Calling" likely initiates a call flow. 
 // For now, I'll just navigate to the CallScreen or initiate the first call.
 // The user requirement says "Start Calling".
@@ -98,32 +98,34 @@ export const CampaignLeadsScreen = () => {
     }
 
     return (
-        <View style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <ArrowLeft size={24} color="#000" />
-                </TouchableOpacity>
-                <Text style={styles.title} numberOfLines={1}>{title}</Text>
-            </View>
+        <ScreenWrapper navigation={navigation} title={title}>
+            <View style={styles.container}>
+                {/* <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                        <ArrowLeft size={24} color="#000" />
+                    </TouchableOpacity>
+                    <Text style={styles.title} numberOfLines={1}>{title}</Text>
+                </View> */}
 
-            <FlatList
-                data={leads}
-                renderItem={renderLeadItem}
-                keyExtractor={(item) => item._id || item.id || Math.random().toString()}
-                contentContainerStyle={styles.listContent}
-                ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>No leads found in this campaign.</Text>
-                    </View>
-                }
-            />
+                <FlatList
+                    data={leads}
+                    renderItem={renderLeadItem}
+                    keyExtractor={(item) => item._id || item.id || Math.random().toString()}
+                    contentContainerStyle={styles.listContent}
+                    ListEmptyComponent={
+                        <View style={styles.emptyContainer}>
+                            <Text style={styles.emptyText}>No leads found in this campaign.</Text>
+                        </View>
+                    }
+                />
 
-            {/* <View style={styles.bottomContainer}>
+                {/* <View style={styles.bottomContainer}>
                 <TouchableOpacity style={styles.callButton} onPress={handleStartCalling}>
                     <Text style={styles.callButtonText}>Start Calling</Text>
                 </TouchableOpacity>
             </View> */}
-        </View>
+            </View>
+        </ScreenWrapper>
     );
 };
 

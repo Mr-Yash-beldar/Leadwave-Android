@@ -8,7 +8,7 @@ import { CallLog, CallType } from '../types/CallLog';
 import { calculateCallStats, formatDurationLong } from '../utils/analyticsUtils';
 import { DonutChart } from '../components/DonutChart';
 import { CallLogItem } from '../components/CallLogItem';
-
+import { ScreenWrapper } from '../components/ScreenWrapper';
 export const ContactAnalyticsScreen: React.FC<{ navigation: any; route: any }> = ({ navigation, route }) => {
   const { phoneNumber, name } = route.params;
   const [allLogs, setAllLogs] = useState<CallLog[]>([]);
@@ -22,7 +22,7 @@ export const ContactAnalyticsScreen: React.FC<{ navigation: any; route: any }> =
   const loadContactLogs = async () => {
     const logs = await CallLogService.getCallLogs();
     setAllLogs(logs);
-    
+
     // Filter logs for this specific contact
     const filtered = logs.filter(log => log.phoneNumber === phoneNumber);
     setContactLogs(filtered);
@@ -32,19 +32,19 @@ export const ContactAnalyticsScreen: React.FC<{ navigation: any; route: any }> =
 
   const getDurationRange = () => {
     if (contactLogs.length === 0) return { start: '', end: '', days: 0 };
-    
+
     const timestamps = contactLogs.map(l => l.timestamp).sort((a, b) => a - b);
     const start = new Date(timestamps[0]);
     const end = new Date(timestamps[timestamps.length - 1]);
     const diffTime = Math.abs(end.getTime() - start.getTime());
     const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
-    
+
     const formatDate = (d: Date) => {
       const day = d.getDate().toString().padStart(2, '0');
       const month = d.toLocaleString('en-US', { month: 'short' });
       return `${day} ${month}`;
     };
-    
+
     return {
       start: formatDate(start),
       end: formatDate(end),
@@ -55,136 +55,138 @@ export const ContactAnalyticsScreen: React.FC<{ navigation: any; route: any }> =
   const duration = getDurationRange();
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#333" />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerName}>{name || 'Unknown'}</Text>
-          <Text style={styles.headerNumber}>{phoneNumber}</Text>
-        </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.iconButton}>
-            <Funnel size={22} color="#000" />
+    <ScreenWrapper navigation={navigation} title="Screen Title">
+      <SafeAreaView style={styles.container} edges={['top']}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <ArrowLeft size={24} color="#333" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}>
-            <MoreVertical size={22} color="#000" />
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerName}>{name || 'Unknown'}</Text>
+            <Text style={styles.headerNumber}>{phoneNumber}</Text>
+          </View>
+          <View style={styles.headerRight}>
+            <TouchableOpacity style={styles.iconButton}>
+              <Funnel size={22} color="#000" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconButton}>
+              <MoreVertical size={22} color="#000" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Add to Group */}
+        <TouchableOpacity style={styles.addToGroup}>
+          <Text style={styles.addToGroupText}>+ Add to Group</Text>
+        </TouchableOpacity>
+
+        {/* Duration Info */}
+        <View style={styles.durationInfo}>
+          <View style={styles.durationItem}>
+            <Text style={styles.durationLabel}>Duration</Text>
+            <Text style={styles.durationValue}>{duration.start} - {duration.end}</Text>
+          </View>
+          <View style={styles.durationItem}>
+            <Text style={styles.durationLabel}>Total days</Text>
+            <Text style={styles.durationValue}>{duration.days} Days</Text>
+          </View>
+        </View>
+
+        {/* Tabs */}
+        <View style={styles.tabsContainer}>
+          <TouchableOpacity
+            style={styles.tab}
+            onPress={() => setActiveTab('summary')}
+          >
+            <Text style={[styles.tabText, activeTab === 'summary' && styles.tabTextActive]}>Summary</Text>
+            {activeTab === 'summary' && <View style={styles.tabIndicator} />}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.tab}
+            onPress={() => setActiveTab('analysis')}
+          >
+            <Text style={[styles.tabText, activeTab === 'analysis' && styles.tabTextActive]}>Analysis</Text>
+            {activeTab === 'analysis' && <View style={styles.tabIndicator} />}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.tab}
+            onPress={() => setActiveTab('history')}
+          >
+            <Text style={[styles.tabText, activeTab === 'history' && styles.tabTextActive]}>Call History</Text>
+            {activeTab === 'history' && <View style={styles.tabIndicator} />}
           </TouchableOpacity>
         </View>
-      </View>
 
-      {/* Add to Group */}
-      <TouchableOpacity style={styles.addToGroup}>
-        <Text style={styles.addToGroupText}>+ Add to Group</Text>
-      </TouchableOpacity>
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          {activeTab === 'summary' && (
+            <>
+              {/* Donut Chart */}
+              <View style={styles.chartCard}>
+                <DonutChart
+                  incoming={stats.incoming}
+                  outgoing={stats.outgoing}
+                  missed={stats.missed}
+                  rejected={stats.rejected}
+                  size={220}
+                />
+              </View>
 
-      {/* Duration Info */}
-      <View style={styles.durationInfo}>
-        <View style={styles.durationItem}>
-          <Text style={styles.durationLabel}>Duration</Text>
-          <Text style={styles.durationValue}>{duration.start} - {duration.end}</Text>
-        </View>
-        <View style={styles.durationItem}>
-          <Text style={styles.durationLabel}>Total days</Text>
-          <Text style={styles.durationValue}>{duration.days} Days</Text>
-        </View>
-      </View>
+              {/* Stats Table Header */}
+              <View style={styles.tableHeader}>
+                <Text style={[styles.tableHeaderText, { flex: 1.5 }]}> </Text>
+                <Text style={styles.tableHeaderText}>Calls</Text>
+                <Text style={styles.tableHeaderText}>Duration</Text>
+              </View>
 
-      {/* Tabs */}
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity 
-          style={styles.tab}
-          onPress={() => setActiveTab('summary')}
-        >
-          <Text style={[styles.tabText, activeTab === 'summary' && styles.tabTextActive]}>Summary</Text>
-          {activeTab === 'summary' && <View style={styles.tabIndicator} />}
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.tab}
-          onPress={() => setActiveTab('analysis')}
-        >
-          <Text style={[styles.tabText, activeTab === 'analysis' && styles.tabTextActive]}>Analysis</Text>
-          {activeTab === 'analysis' && <View style={styles.tabIndicator} />}
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.tab}
-          onPress={() => setActiveTab('history')}
-        >
-          <Text style={[styles.tabText, activeTab === 'history' && styles.tabTextActive]}>Call History</Text>
-          {activeTab === 'history' && <View style={styles.tabIndicator} />}
-        </TouchableOpacity>
-      </View>
+              {/* Stats Table */}
+              <View style={styles.statsTable}>
+                <View style={styles.statsRow}>
+                  <Text style={[styles.statsLabel, { color: '#8BC34A' }]}>Incoming</Text>
+                  <Text style={styles.statsValue}>{stats.incoming}</Text>
+                  <Text style={styles.statsDuration}>{formatDurationLong(stats.incomingDuration)}</Text>
+                </View>
+                <View style={styles.statsRow}>
+                  <Text style={[styles.statsLabel, { color: '#FFA000' }]}>Outgoing</Text>
+                  <Text style={styles.statsValue}>{stats.outgoing}</Text>
+                  <Text style={styles.statsDuration}>{formatDurationLong(stats.outgoingDuration)}</Text>
+                </View>
+                <View style={styles.statsRow}>
+                  <Text style={[styles.statsLabel, { color: '#E57373' }]}>Missed</Text>
+                  <Text style={styles.statsValue}>{stats.missed}</Text>
+                  <Text style={styles.statsDuration}>-</Text>
+                </View>
+                <View style={styles.statsRow}>
+                  <Text style={[styles.statsLabel, { color: '#D32F2F' }]}>Rejected</Text>
+                  <Text style={styles.statsValue}>{stats.rejected}</Text>
+                  <Text style={styles.statsDuration}>-</Text>
+                </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {activeTab === 'summary' && (
-          <>
-            {/* Donut Chart */}
-            <View style={styles.chartCard}>
-              <DonutChart
-                incoming={stats.incoming}
-                outgoing={stats.outgoing}
-                missed={stats.missed}
-                rejected={stats.rejected}
-                size={220}
-              />
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>TOTAL</Text>
+                  <Text style={styles.totalValue}>{stats.total}</Text>
+                  <Text style={styles.totalDuration}>{formatDurationLong(stats.totalDuration)}</Text>
+                </View>
+              </View>
+            </>
+          )}
+
+          {activeTab === 'history' && (
+            <View style={styles.historyContainer}>
+              {contactLogs.map(log => (
+                <CallLogItem key={log.id} item={log} simCount={2} />
+              ))}
             </View>
+          )}
 
-            {/* Stats Table Header */}
-            <View style={styles.tableHeader}>
-               <Text style={[styles.tableHeaderText, { flex: 1.5 }]}> </Text>
-               <Text style={styles.tableHeaderText}>Calls</Text>
-               <Text style={styles.tableHeaderText}>Duration</Text>
+          {activeTab === 'analysis' && (
+            <View style={styles.analysisContainer}>
+              <Text style={styles.comingSoon}>Analysis coming soon...</Text>
             </View>
-
-            {/* Stats Table */}
-            <View style={styles.statsTable}>
-              <View style={styles.statsRow}>
-                <Text style={[styles.statsLabel, { color: '#8BC34A' }]}>Incoming</Text>
-                <Text style={styles.statsValue}>{stats.incoming}</Text>
-                <Text style={styles.statsDuration}>{formatDurationLong(stats.incomingDuration)}</Text>
-              </View>
-              <View style={styles.statsRow}>
-                <Text style={[styles.statsLabel, { color: '#FFA000' }]}>Outgoing</Text>
-                <Text style={styles.statsValue}>{stats.outgoing}</Text>
-                <Text style={styles.statsDuration}>{formatDurationLong(stats.outgoingDuration)}</Text>
-              </View>
-              <View style={styles.statsRow}>
-                <Text style={[styles.statsLabel, { color: '#E57373' }]}>Missed</Text>
-                <Text style={styles.statsValue}>{stats.missed}</Text>
-                <Text style={styles.statsDuration}>-</Text>
-              </View>
-              <View style={styles.statsRow}>
-                <Text style={[styles.statsLabel, { color: '#D32F2F' }]}>Rejected</Text>
-                <Text style={styles.statsValue}>{stats.rejected}</Text>
-                <Text style={styles.statsDuration}>-</Text>
-              </View>
-              
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>TOTAL</Text>
-                <Text style={styles.totalValue}>{stats.total}</Text>
-                <Text style={styles.totalDuration}>{formatDurationLong(stats.totalDuration)}</Text>
-              </View>
-            </View>
-          </>
-        )}
-
-        {activeTab === 'history' && (
-          <View style={styles.historyContainer}>
-            {contactLogs.map(log => (
-              <CallLogItem key={log.id} item={log} simCount={2} />
-            ))}
-          </View>
-        )}
-
-        {activeTab === 'analysis' && (
-          <View style={styles.analysisContainer}>
-            <Text style={styles.comingSoon}>Analysis coming soon...</Text>
-          </View>
-        )}
-      </ScrollView>
-    </SafeAreaView>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </ScreenWrapper>
   );
 };
 

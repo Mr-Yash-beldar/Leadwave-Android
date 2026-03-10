@@ -11,7 +11,7 @@ import {
     DEMO_FOLLOWUPS,
     FollowUp,
 } from '../services/NotificationService';
-
+import { ScreenWrapper } from '../components/ScreenWrapper';
 export const FollowUpScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     const [scheduled, setScheduled] = useState(false);
 
@@ -74,44 +74,47 @@ export const FollowUpScreen: React.FC<{ navigation: any }> = ({ navigation }) =>
     );
 
     return (
-        <SafeAreaView style={styles.container} edges={['top']}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <ChevronLeft size={28} color={colors.black} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Follow-up Reminders</Text>
-                <View style={styles.headerRight}>
-                    <TouchableOpacity onPress={handleCancelAll} style={styles.headerBtn}>
-                        <BellOff size={20} color={colors.black} />
+        <ScreenWrapper navigation={navigation} title="Screen Title">
+
+            <SafeAreaView style={styles.container} edges={['top']}>
+                {/* Header */}
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()}>
+                        <ChevronLeft size={28} color={colors.black} />
                     </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Follow-up Reminders</Text>
+                    <View style={styles.headerRight}>
+                        <TouchableOpacity onPress={handleCancelAll} style={styles.headerBtn}>
+                            <BellOff size={20} color={colors.black} />
+                        </TouchableOpacity>
+                    </View>
                 </View>
-            </View>
 
-            {/* Info banner */}
-            <View style={styles.banner}>
-                <Bell size={16} color={colors.black} />
-                <Text style={styles.bannerText}>
-                    {scheduled
-                        ? 'Reminders scheduled — you\'ll be notified 1 hour before each follow-up.'
-                        : 'Scheduling reminders…'}
-                </Text>
-            </View>
+                {/* Info banner */}
+                <View style={styles.banner}>
+                    <Bell size={16} color={colors.black} />
+                    <Text style={styles.bannerText}>
+                        {scheduled
+                            ? 'Reminders scheduled — you\'ll be notified 1 hour before each follow-up.'
+                            : 'Scheduling reminders…'}
+                    </Text>
+                </View>
 
-            <FlatList
-                data={DEMO_FOLLOWUPS}
-                keyExtractor={item => item.id}
-                renderItem={renderItem}
-                contentContainerStyle={styles.list}
-                ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-                ListFooterComponent={
-                    <TouchableOpacity style={styles.scheduleBtn} onPress={handleScheduleAll}>
-                        <Bell size={18} color={colors.black} />
-                        <Text style={styles.scheduleBtnText}>Re-schedule All Reminders</Text>
-                    </TouchableOpacity>
-                }
-            />
-        </SafeAreaView>
+                <FlatList
+                    data={DEMO_FOLLOWUPS}
+                    keyExtractor={item => item.id}
+                    renderItem={renderItem}
+                    contentContainerStyle={styles.list}
+                    ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+                    ListFooterComponent={
+                        <TouchableOpacity style={styles.scheduleBtn} onPress={handleScheduleAll}>
+                            <Bell size={18} color={colors.black} />
+                            <Text style={styles.scheduleBtnText}>Re-schedule All Reminders</Text>
+                        </TouchableOpacity>
+                    }
+                />
+            </SafeAreaView>
+        </ScreenWrapper>
     );
 };
 

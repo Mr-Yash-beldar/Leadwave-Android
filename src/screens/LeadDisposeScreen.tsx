@@ -17,7 +17,7 @@ import { Lead } from '../types/Lead';
 import { LeadsService } from '../services/LeadsService';
 import { CallLogService } from '../services/CallLogService';
 import DateTimePicker from '@react-native-community/datetimepicker';
-
+import { ScreenWrapper } from '../components/ScreenWrapper';
 export const LeadDisposeScreen = () => {
     const route = useRoute<any>();
     const navigation = useNavigation<any>();
@@ -113,7 +113,7 @@ export const LeadDisposeScreen = () => {
             ]);
         } catch (err) {
             console.error(err);
-            Alert.alert("Error", "Failed to update lead. Please try again.");
+            // Alert.alert("Error", "Failed to update lead. Please try again.");
         } finally {
             setSubmitting(false);
         }
@@ -204,6 +204,8 @@ export const LeadDisposeScreen = () => {
     );
 
     return (
+              <ScreenWrapper navigation={navigation} title="Call Summary">
+
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
@@ -248,6 +250,7 @@ export const LeadDisposeScreen = () => {
                 </TouchableOpacity>
             </View>
         </SafeAreaView>
+        </ScreenWrapper>
     );
 };
 

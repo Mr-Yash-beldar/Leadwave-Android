@@ -28,7 +28,7 @@ import { api } from '../services/api';
 import { MessageCircle, MessageSquare } from 'lucide-react-native';
 
 // import AudioRecorderPlayer from 'react-native-audio-recorder-player'; // REMOVED
-
+import { ScreenWrapper } from '../components/ScreenWrapper';
 
 const LEAD_STATUS = {
   NEW: "New",
@@ -402,7 +402,7 @@ export const LeadDetailsScreen = () => {
 
     } catch (e) {
       console.error(e);
-      Alert.alert("Error", "Something went wrong.");
+      // Alert.alert("Error", "Something went wrong.");
     } finally {
       setIsProcessing(false);
     }
@@ -584,9 +584,13 @@ export const LeadDetailsScreen = () => {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
+    <ScreenWrapper
+      navigation={navigation}
+      title={lead ? `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Lead Details' : 'Lead Details'}
+    >
+      <SafeAreaView style={styles.container} edges={['top']}>
+        {/* Header */}
+        {/* <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
@@ -594,212 +598,214 @@ export const LeadDetailsScreen = () => {
         <TouchableOpacity style={styles.iconBtn} onPress={() => fetchLead(true)}>
           <RefreshCw size={24} color={leadLoading ? colors.primary : colors.text} />
         </TouchableOpacity>
-      </View>
+      </View> */}
 
-      {/* Tabs */}
-      <View style={styles.tabContainer}>
-        <TabButton title="LEAD DETAILS" isActive={activeTab === 'LEAD_INFO'} onPress={() => setActiveTab('LEAD_INFO')} />
-        <TabButton title="DISPOSE LEAD" isActive={activeTab === 'DISPOSE_LEAD'} onPress={() => setActiveTab('DISPOSE_LEAD')} />
-      </View>
+        {/* Tabs */}
+        <View style={styles.tabContainer}>
+          <TabButton title="LEAD DETAILS" isActive={activeTab === 'LEAD_INFO'} onPress={() => setActiveTab('LEAD_INFO')} />
+          <TabButton title="DISPOSE LEAD" isActive={activeTab === 'DISPOSE_LEAD'} onPress={() => setActiveTab('DISPOSE_LEAD')} />
+        </View>
 
-      {/* ── Skeleton loading overlay ── */}
-      {(leadLoading || !lead) ? (
-        <ScrollView style={styles.content} contentContainerStyle={{ padding: 16 }} scrollEnabled={false}>
-          {[0, 1, 2, 3].map(i => {
-            const opacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.75] });
-            return (
-              <Animated.View key={i} style={[ldSkeletonStyles.card, { opacity }]}>
-                <Animated.View style={[ldSkeletonStyles.titleLine, { opacity }]} />
-                <View style={ldSkeletonStyles.separator} />
-                {[0, 1, 2, 3].map(j => (
-                  <View key={j} style={ldSkeletonStyles.row}>
-                    <Animated.View style={[ldSkeletonStyles.labelLine, { opacity }]} />
-                    <Animated.View style={[ldSkeletonStyles.valueLine, { opacity }]} />
-                  </View>
-                ))}
-              </Animated.View>
-            );
-          })}
-        </ScrollView>
-      ) : (
-        <>
-
-          {/* Timer / Banner */}
-
-
-          {activeTab === 'LEAD_INFO' && (
-            <>
-              {/* Sub Tabs */}
-              <View style={styles.subTabContainer}>
-                <TouchableOpacity
-                  style={[styles.subTab, subTab === 'About' && styles.subTabActive]}
-                  onPress={() => setSubTab('About')}
-                >
-                  <Text style={[styles.subTabText, subTab === 'About' && styles.subTabTextActive]}>About</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.subTab, subTab === 'Timeline' && styles.subTabActive]}
-                  onPress={() => setSubTab('Timeline')}
-                >
-                  <Text style={[styles.subTabText, subTab === 'Timeline' && styles.subTabTextActive]}>Timeline</Text>
-                </TouchableOpacity>
-              </View>
-
-
-              <ScrollView style={styles.scrollContent}>
-                {subTab === 'About' ? (
-                  <>
-                    {renderBasicDetails()}
-                    {renderLeadProgress()}
-                    <View style={{ height: 100 }} />
-                  </>
-                ) : (
-                  <View style={styles.timelineContainer}>
-                    {/* Header */}
-                    <View style={styles.tlHeader}>
-                      <Text style={styles.tlHeaderText}>Activities</Text>
+        {/* ── Skeleton loading overlay ── */}
+        {(leadLoading || !lead) ? (
+          <ScrollView style={styles.content} contentContainerStyle={{ padding: 16 }} scrollEnabled={false}>
+            {[0, 1, 2, 3].map(i => {
+              const opacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.75] });
+              return (
+                <Animated.View key={i} style={[ldSkeletonStyles.card, { opacity }]}>
+                  <Animated.View style={[ldSkeletonStyles.titleLine, { opacity }]} />
+                  <View style={ldSkeletonStyles.separator} />
+                  {[0, 1, 2, 3].map(j => (
+                    <View key={j} style={ldSkeletonStyles.row}>
+                      <Animated.View style={[ldSkeletonStyles.labelLine, { opacity }]} />
+                      <Animated.View style={[ldSkeletonStyles.valueLine, { opacity }]} />
                     </View>
+                  ))}
+                </Animated.View>
+              );
+            })}
+          </ScrollView>
+        ) : (
+          <>
 
-                    {timelineLoading && (
-                      <Text style={{ color: colors.textSecondary, marginBottom: 12, textAlign: 'center' }}>Loading history...</Text>
-                    )}
+            {/* Timer / Banner */}
 
-                    {/* Build unified event list from backend + lead created */}
-                    {(() => {
-                      // Append a local "Lead Created" event at the end (backend doesn't include it)
-                      const createdDate = new Date(lead.created || lead.createdAt || Date.now());
-                      const createdSource = lead.leadSource || 'System';
 
-                      const allEvts: any[] = [
-                        ...timelineLogs, // already sorted newest-first by backend
-                        { kind: 'CREATED', date: createdDate.toISOString(), timestamp: createdDate.getTime(), source: createdSource },
-                      ];
+            {activeTab === 'LEAD_INFO' && (
+              <>
+                {/* Sub Tabs */}
+                <View style={styles.subTabContainer}>
+                  <TouchableOpacity
+                    style={[styles.subTab, subTab === 'About' && styles.subTabActive]}
+                    onPress={() => setSubTab('About')}
+                  >
+                    <Text style={[styles.subTabText, subTab === 'About' && styles.subTabTextActive]}>About</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.subTab, subTab === 'Timeline' && styles.subTabActive]}
+                    onPress={() => setSubTab('Timeline')}
+                  >
+                    <Text style={[styles.subTabText, subTab === 'Timeline' && styles.subTabTextActive]}>Timeline</Text>
+                  </TouchableOpacity>
+                </View>
 
-                      // Helper: date badge string
-                      const dateBadge = (d: Date) =>
-                        d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-                      let lastBadge = '';
+                <ScrollView style={styles.scrollContent}>
+                  {subTab === 'About' ? (
+                    <>
+                      {renderBasicDetails()}
+                      {renderLeadProgress()}
+                      <View style={{ height: 100 }} />
+                    </>
+                  ) : (
+                    <View style={styles.timelineContainer}>
+                      {/* Header */}
+                      <View style={styles.tlHeader}>
+                        <Text style={styles.tlHeaderText}>Activities</Text>
+                      </View>
 
-                      return allEvts.map((evt: any, i: number) => {
-                        const evtDate = new Date(evt.date || evt.timestamp);
-                        const badge = dateBadge(evtDate);
-                        const showBadge = badge !== lastBadge;
-                        lastBadge = badge;
-                        const isLast = i === allEvts.length - 1;
+                      {timelineLoading && (
+                        <Text style={{ color: colors.textSecondary, marginBottom: 12, textAlign: 'center' }}>Loading history...</Text>
+                      )}
 
-                        if (evt.kind === 'CALL') {
-                          const expanded = expandedLogIndex === i;
-                          // Icon colour: grey for not_connected, red for missed, green for answered
-                          const isNotConnected = (evt.label || '').toLowerCase().includes('not_connected') || (evt.label || '').toLowerCase().includes('not connected');
-                          const iconBg = isNotConnected ? '#9E9E9E' : evt.isMissed ? '#F44336' : '#4CAF50';
-                          return (
-                            <View key={`call-${evt.logId || i}`} style={styles.tlRow}>
-                              <View style={styles.tlDateCol}>
-                                {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
-                              </View>
-                              <View style={styles.tlSpineCol}>
-                                {!isLast && <View style={styles.tlSpineLine} />}
-                                <View style={[styles.tlIconCircle, { backgroundColor: iconBg }]}>
-                                  <Text style={{ color: 'white', fontSize: 16 }}>📞</Text>
+                      {/* Build unified event list from backend + lead created */}
+                      {(() => {
+                        // Append a local "Lead Created" event at the end (backend doesn't include it)
+                        const createdDate = new Date(lead.created || lead.createdAt || Date.now());
+                        const createdSource = lead.leadSource || 'System';
+
+                        const allEvts: any[] = [
+                          ...timelineLogs, // already sorted newest-first by backend
+                          { kind: 'CREATED', date: createdDate.toISOString(), timestamp: createdDate.getTime(), source: createdSource },
+                        ];
+
+                        // Helper: date badge string
+                        const dateBadge = (d: Date) =>
+                          d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                        let lastBadge = '';
+
+                        return allEvts.map((evt: any, i: number) => {
+                          const evtDate = new Date(evt.date || evt.timestamp);
+                          const badge = dateBadge(evtDate);
+                          const showBadge = badge !== lastBadge;
+                          lastBadge = badge;
+                          const isLast = i === allEvts.length - 1;
+
+                          if (evt.kind === 'CALL') {
+                            const expanded = expandedLogIndex === i;
+                            // Icon colour: grey for not_connected, red for missed, green for answered
+                            const isNotConnected = (evt.label || '').toLowerCase().includes('not_connected') || (evt.label || '').toLowerCase().includes('not connected');
+                            const iconBg = isNotConnected ? '#9E9E9E' : evt.isMissed ? '#F44336' : '#4CAF50';
+                            return (
+                              <View key={`call-${evt.logId || i}`} style={styles.tlRow}>
+                                <View style={styles.tlDateCol}>
+                                  {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
                                 </View>
-                              </View>
-                              <TouchableOpacity
-                                style={[styles.tlCard, expanded && styles.tlCardExpanded]}
-                                onPress={() => setExpandedLogIndex(expanded ? null : i)}
-                                activeOpacity={0.8}
-                              >
-                                <View style={styles.tlCardRow}>
-                                  <Text style={styles.tlCallLabel}>{evt.label} | {evt.timeStr}</Text>
-                                  <Text style={styles.tlChevron}>{expanded ? '▲' : '▼'}</Text>
-                                </View>
-                                {expanded && (
-                                  <View style={styles.tlExpanded}>
-                                    <View style={styles.tlDetailRow}>
-                                      <Text style={styles.tlDetailLabel}>Call Duration</Text>
-                                      <Text style={styles.tlDetailValue}>{evt.durStr}</Text>
-                                    </View>
-                                    {evt.addedBy && (
-                                      <View style={styles.tlDetailRow}>
-                                        <Text style={styles.tlDetailLabel}>Agent</Text>
-                                        <Text style={styles.tlDetailValue}>{evt.addedBy}</Text>
-                                      </View>
-                                    )}
+                                <View style={styles.tlSpineCol}>
+                                  {!isLast && <View style={styles.tlSpineLine} />}
+                                  <View style={[styles.tlIconCircle, { backgroundColor: iconBg }]}>
+                                    <Text style={{ color: 'white', fontSize: 16 }}>📞</Text>
                                   </View>
-                                )}
-                              </TouchableOpacity>
-                            </View>
-                          );
-                        }
+                                </View>
+                                <TouchableOpacity
+                                  style={[styles.tlCard, expanded && styles.tlCardExpanded]}
+                                  onPress={() => setExpandedLogIndex(expanded ? null : i)}
+                                  activeOpacity={0.8}
+                                >
+                                  <View style={styles.tlCardRow}>
+                                    <Text style={styles.tlCallLabel}>{evt.label} | {evt.timeStr}</Text>
+                                    <Text style={styles.tlChevron}>{expanded ? '▲' : '▼'}</Text>
+                                  </View>
+                                  {expanded && (
+                                    <View style={styles.tlExpanded}>
+                                      <View style={styles.tlDetailRow}>
+                                        <Text style={styles.tlDetailLabel}>Call Duration</Text>
+                                        <Text style={styles.tlDetailValue}>{evt.durStr}</Text>
+                                      </View>
+                                      {evt.addedBy && (
+                                        <View style={styles.tlDetailRow}>
+                                          <Text style={styles.tlDetailLabel}>Agent</Text>
+                                          <Text style={styles.tlDetailValue}>{evt.addedBy}</Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                  )}
+                                </TouchableOpacity>
+                              </View>
+                            );
+                          }
 
-                        if (evt.kind === 'NOTE') {
+                          if (evt.kind === 'NOTE') {
+                            return (
+                              <View key={`note-${evt.noteId || i}`} style={styles.tlRow}>
+                                <View style={styles.tlDateCol}>
+                                  {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
+                                </View>
+                                <View style={styles.tlSpineCol}>
+                                  {!isLast && <View style={styles.tlSpineLine} />}
+                                  <View style={[styles.tlIconCircle, { backgroundColor: '#FF9800' }]}>
+                                    <Text style={{ color: 'white', fontSize: 14 }}>📝</Text>
+                                  </View>
+                                </View>
+                                <View style={styles.tlCard}>
+                                  <Text style={styles.tlNoteTitle}>Desc: {evt.desc}</Text>
+                                  <Text style={styles.tlNoteDesc}>Status: {evt.leadStatus}</Text>
+                                  {/* <Text style={styles.tlNoteDesc}></Text> */}
+                                  {evt.addedBy && <Text style={styles.tlAddedBy}>Added by: {evt.addedBy}</Text>}
+                                </View>
+                              </View>
+                            );
+                          }
+
+                          // CREATED
                           return (
-                            <View key={`note-${evt.noteId || i}`} style={styles.tlRow}>
+                            <View key={`created-${i}`} style={styles.tlRow}>
                               <View style={styles.tlDateCol}>
                                 {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
                               </View>
                               <View style={styles.tlSpineCol}>
-                                {!isLast && <View style={styles.tlSpineLine} />}
-                                <View style={[styles.tlIconCircle, { backgroundColor: '#FF9800' }]}>
-                                  <Text style={{ color: 'white', fontSize: 14 }}>📝</Text>
+                                <View style={[styles.tlIconCircle, { backgroundColor: '#9C27B0' }]}>
+                                  <Text style={{ color: 'white', fontSize: 16 }}>👤</Text>
                                 </View>
                               </View>
                               <View style={styles.tlCard}>
-                                <Text style={styles.tlNoteTitle}>Note Added</Text>
-                                <Text style={styles.tlNoteDesc}>{evt.desc}</Text>
-                                {evt.addedBy && <Text style={styles.tlAddedBy}>Added by: {evt.addedBy}</Text>}
+                                <Text style={styles.tlCallLabel}>Lead Created | Source: {evt.source}</Text>
+                                <Text style={styles.tlAddedBy}>{evtDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
                               </View>
                             </View>
                           );
-                        }
-
-                        // CREATED
-                        return (
-                          <View key={`created-${i}`} style={styles.tlRow}>
-                            <View style={styles.tlDateCol}>
-                              {showBadge && <View style={styles.tlDateBadge}><Text style={styles.tlDateText}>{badge}</Text></View>}
-                            </View>
-                            <View style={styles.tlSpineCol}>
-                              <View style={[styles.tlIconCircle, { backgroundColor: '#9C27B0' }]}>
-                                <Text style={{ color: 'white', fontSize: 16 }}>👤</Text>
-                              </View>
-                            </View>
-                            <View style={styles.tlCard}>
-                              <Text style={styles.tlCallLabel}>Lead Created | Source: {evt.source}</Text>
-                              <Text style={styles.tlAddedBy}>{evtDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                            </View>
-                          </View>
-                        );
-                      });
-                    })()}
-                    <View style={{ height: 80 }} />
-                  </View>
+                        });
+                      })()}
+                      <View style={{ height: 80 }} />
+                    </View>
 
 
-                )}
+                  )}
+                </ScrollView>
+              </>
+            )}
+
+            {activeTab === 'DISPOSE_LEAD' && (
+              <ScrollView style={styles.scrollContent}>
+                {renderDisposeContent()}
+                <View style={{ height: 100 }} />
               </ScrollView>
-            </>
-          )}
+            )}
 
-          {activeTab === 'DISPOSE_LEAD' && (
-            <ScrollView style={styles.scrollContent}>
-              {renderDisposeContent()}
-              <View style={{ height: 100 }} />
-            </ScrollView>
-          )}
+            {/* Footer Call Button */}
+            {activeTab !== 'DISPOSE_LEAD' && (
+              <View style={styles.footer}>
+                <TouchableOpacity style={styles.footerCallBtn} onPress={handleCallNow}>
+                  <Text style={styles.footerCallText}>Call Now</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </>
+        )}
 
-          {/* Footer Call Button */}
-          {activeTab !== 'DISPOSE_LEAD' && (
-            <View style={styles.footer}>
-              <TouchableOpacity style={styles.footerCallBtn} onPress={handleCallNow}>
-                <Text style={styles.footerCallText}>Call Now</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </>
-      )}
-
-    </SafeAreaView>
+      </SafeAreaView>
+    </ScreenWrapper>
   );
 };
 
@@ -1067,7 +1073,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   noteItem: {
-    padding: 8,
+    padding: 2,
     backgroundColor: '#F9F9F9',
     borderRadius: 4,
     marginBottom: 8,
@@ -1078,7 +1084,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   noteLabel: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 'bold',
     color: colors.primary,
   },

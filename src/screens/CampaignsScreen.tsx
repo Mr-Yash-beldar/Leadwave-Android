@@ -5,7 +5,7 @@ import { colors } from '../theme/colors';
 import { Search, X } from 'lucide-react-native';
 import { campaignService } from '../services/campaignService';
 import { Campaign } from '../types/Campaign';
-
+import { ScreenWrapper } from '../components/ScreenWrapper';
 export const CampaignsScreen = () => {
     const navigation = useNavigation<any>();
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -81,18 +81,18 @@ export const CampaignsScreen = () => {
                         <Text style={styles.statValue}>{item.inProgressCount || 0}</Text>
                     </View>
                     <View style={styles.statBorder} />
-                    <View style={styles.statItem}>
+                    {/* <View style={styles.statItem}>
                         <Text style={styles.statLabel}>Closed</Text>
                         <Text style={styles.statValue}>{item.closedCount || 0}</Text>
-                    </View>
+                    </View> */}
                 </View>
 
-                <View style={styles.divider} />
+                {/* <View style={styles.divider} />
 
                 <View style={styles.unassignedContainer}>
                     <Text style={styles.statLabel}>Un-Assigned</Text>
                     <Text style={styles.statValue}>{item.unAssignedCount || 0}</Text>
-                </View>
+                </View> */}
             </View>
         </TouchableOpacity>
     );
@@ -106,42 +106,44 @@ export const CampaignsScreen = () => {
     }
 
     return (
-        <View style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>My Campaigns</Text>
-            </View>
+        <ScreenWrapper navigation={navigation} title="My Campaigns">
+            <View style={styles.container}>
+                {/* <View style={styles.header}>
+                    <Text style={styles.headerTitle}>My Campaigns</Text>
+                </View> */}
 
-            <View style={styles.searchContainer}>
-                <Search size={20} color={colors.textSecondary} />
-                <TextInput
-                    style={styles.searchInput}
-                    placeholder="Search Campaign"
-                    value={searchQuery}
-                    onChangeText={handleSearch}
-                    placeholderTextColor={colors.textSecondary}
+                <View style={styles.searchContainer}>
+                    <Search size={20} color={colors.textSecondary} />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search Campaign"
+                        value={searchQuery}
+                        onChangeText={handleSearch}
+                        placeholderTextColor={colors.textSecondary}
+                    />
+                    {searchQuery.length > 0 && (
+                        <TouchableOpacity onPress={clearSearch}>
+                            <X size={20} color={colors.textSecondary} />
+                        </TouchableOpacity>
+                    )}
+                </View>
+
+                <FlatList
+                    data={filteredCampaigns}
+                    renderItem={renderItem}
+                    keyExtractor={item => item._id}
+                    contentContainerStyle={styles.listContent}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+                    }
+                    ListEmptyComponent={
+                        <View style={styles.emptyContainer}>
+                            <Text style={styles.emptyText}>No campaigns found</Text>
+                        </View>
+                    }
                 />
-                {searchQuery.length > 0 && (
-                    <TouchableOpacity onPress={clearSearch}>
-                        <X size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                )}
             </View>
-
-            <FlatList
-                data={filteredCampaigns}
-                renderItem={renderItem}
-                keyExtractor={item => item._id}
-                contentContainerStyle={styles.listContent}
-                refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
-                }
-                ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>No campaigns found</Text>
-                    </View>
-                }
-            />
-        </View>
+        </ScreenWrapper>
     );
 };
 

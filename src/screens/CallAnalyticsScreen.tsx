@@ -27,7 +27,7 @@ import { colors } from '../theme/colors';
 import { api } from '../services/api';
 import { ReportService } from '../services/ReportService';
 import { ReportMetrics } from '../types/Report';
-
+import { ScreenWrapper } from '../components/ScreenWrapper';
 // ─── Skeleton shimmer ─────────────────────────────────────────────────────
 const SkeletonCard = () => {
   const anim = useRef(new Animated.Value(0.35)).current;
@@ -198,97 +198,91 @@ export const CallAnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation 
 
   // ── render ────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header — original */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <ChevronLeft size={28} color={colors.black} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Reports</Text>
-        <View style={styles.headerActions} />
-      </View>
+    <ScreenWrapper navigation={navigation} title="My Reports">
+      <SafeAreaView style={styles.container} edges={['top']}>
 
-      <ScrollView
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => fetchReport(true)}
-            colors={[colors.primary]}
-            tintColor={colors.primary}
-          />
-        }
-      >
-        {/* Date selector row — now with 3 chips */}
-        <View style={styles.dateSelectorRow}>
-          <TouchableOpacity
-            style={[styles.dateChip, dateFilter === 'today' && styles.dateChipActive]}
-            onPress={() => setDateFilter('today')}
-          >
-            <Text style={[styles.dateChipText, dateFilter === 'today' && styles.dateChipTextActive]}>
-              Today
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.dateChip, dateFilter === 'yesterday' && styles.dateChipActive]}
-            onPress={() => setDateFilter('yesterday')}
-          >
-            <Text style={[styles.dateChipText, dateFilter === 'yesterday' && styles.dateChipTextActive]}>
-              Yesterday
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.dateChip, dateFilter === 'custom' && styles.dateChipActive,
-            dateFilter === 'custom' && { flexShrink: 1 }]}
-            onPress={() => setShowRangeModal(true)}
-          >
-            <Calendar size={13} color={dateFilter === 'custom' ? colors.black : colors.textSecondary} />
-            <Text style={[styles.dateChipText, { marginLeft: 4 },
-            dateFilter === 'custom' && styles.dateChipTextActive]}
-              numberOfLines={1}>
-              {dateFilter === 'custom' ? filterLabel : 'Custom'}
-            </Text>
-          </TouchableOpacity>
-          {/* <Text style={styles.reportSubtitle}>My Report</Text> */}
-        </View>
 
-        {loading ? (
-          <View style={styles.reportsContainer}>
-            <SkeletonSection rows={6} />
-            <SkeletonSection rows={4} />
-            <SkeletonSection rows={4} />
-            <SkeletonSection rows={4} />
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => fetchReport(true)}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
+            />
+          }
+        >
+          {/* Date selector row — now with 3 chips */}
+          <View style={styles.dateSelectorRow}>
+            <TouchableOpacity
+              style={[styles.dateChip, dateFilter === 'today' && styles.dateChipActive]}
+              onPress={() => setDateFilter('today')}
+            >
+              <Text style={[styles.dateChipText, dateFilter === 'today' && styles.dateChipTextActive]}>
+                Today
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dateChip, dateFilter === 'yesterday' && styles.dateChipActive]}
+              onPress={() => setDateFilter('yesterday')}
+            >
+              <Text style={[styles.dateChipText, dateFilter === 'yesterday' && styles.dateChipTextActive]}>
+                Yesterday
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dateChip, dateFilter === 'custom' && styles.dateChipActive,
+              dateFilter === 'custom' && { flexShrink: 1 }]}
+              onPress={() => setShowRangeModal(true)}
+            >
+              <Calendar size={13} color={dateFilter === 'custom' ? colors.black : colors.textSecondary} />
+              <Text style={[styles.dateChipText, { marginLeft: 4 },
+              dateFilter === 'custom' && styles.dateChipTextActive]}
+                numberOfLines={1}>
+                {dateFilter === 'custom' ? filterLabel : 'Custom'}
+              </Text>
+            </TouchableOpacity>
+            {/* <Text style={styles.reportSubtitle}>My Report</Text> */}
           </View>
-        ) : metrics ? (
-          <View style={styles.reportsContainer}>
-            <SectionHeader title="Call Overview" />
-            <View style={styles.grid}>
-              <MetricCard label="Total Calls" value={metrics.callOverview.totalCalls} />
-              <MetricCard label="Total Calls Connected" value={metrics.callOverview.totalConnected} />
-              <MetricCard label="Total Call Time" value={metrics.callOverview.totalCallTime} />
-              <MetricCard label="Total Unconnected Calls" value={metrics.callOverview.totalUnconnected} />
-              <MetricCard label="Avg. Call Duration" value={metrics.callOverview.avgCallDuration} />
-              <MetricCard label="Avg. Start Calling Time" value={metrics.callOverview.avgStartCallingTime} />
-            </View>
 
-            <SectionHeader title="Outgoing Calls" />
-            <View style={styles.grid}>
-              <MetricCard label="Total Outgoing Calls" value={metrics.outgoingCalls.totalOutgoing} />
-              <MetricCard label="Outgoing Connected Calls" value={metrics.outgoingCalls.outgoingConnected} />
-              <MetricCard label="Outgoing Unanswered Calls" value={metrics.outgoingCalls.outgoingUnanswered} />
-              <MetricCard label="Avg. Outgoing Call Duration" value={metrics.outgoingCalls.avgOutgoingDuration} />
+          {loading ? (
+            <View style={styles.reportsContainer}>
+              <SkeletonSection rows={6} />
+              <SkeletonSection rows={4} />
+              <SkeletonSection rows={4} />
+              <SkeletonSection rows={4} />
             </View>
+          ) : metrics ? (
+            <View style={styles.reportsContainer}>
+              <SectionHeader title="Call Overview" />
+              <View style={styles.grid}>
+                <MetricCard label="Total Calls" value={metrics.callOverview.totalCalls} />
+                <MetricCard label="Total Calls Connected" value={metrics.callOverview.totalConnected} />
+                <MetricCard label="Total Call Time" value={metrics.callOverview.totalCallTime} />
+                <MetricCard label="Total Unconnected Calls" value={metrics.callOverview.totalUnconnected} />
+                <MetricCard label="Avg. Call Duration" value={metrics.callOverview.avgCallDuration} />
+                <MetricCard label="Avg. Start Calling Time" value={metrics.callOverview.avgStartCallingTime} />
+              </View>
 
-            <SectionHeader title="Incoming Calls" />
-            <View style={styles.grid}>
-              <MetricCard label="Total Incoming Calls" value={metrics.incomingCalls.totalIncoming} />
-              <MetricCard label="Incoming Connected Calls" value={metrics.incomingCalls.incomingConnected} />
-              <MetricCard label="Incoming Unanswered Calls" value={metrics.incomingCalls.incomingUnanswered} />
-              <MetricCard label="Avg. Incoming Call Duration" value={metrics.incomingCalls.avgIncomingDuration} />
-            </View>
+              <SectionHeader title="Outgoing Calls" />
+              <View style={styles.grid}>
+                <MetricCard label="Total Outgoing Calls" value={metrics.outgoingCalls.totalOutgoing} />
+                <MetricCard label="Outgoing Connected Calls" value={metrics.outgoingCalls.outgoingConnected} />
+                <MetricCard label="Outgoing Unanswered Calls" value={metrics.outgoingCalls.outgoingUnanswered} />
+                <MetricCard label="Avg. Outgoing Call Duration" value={metrics.outgoingCalls.avgOutgoingDuration} />
+              </View>
 
-            {/* <SectionHeader title="Follow up Report" info />
+              <SectionHeader title="Incoming Calls" />
+              <View style={styles.grid}>
+                <MetricCard label="Total Incoming Calls" value={metrics.incomingCalls.totalIncoming} />
+                <MetricCard label="Incoming Connected Calls" value={metrics.incomingCalls.incomingConnected} />
+                <MetricCard label="Incoming Unanswered Calls" value={metrics.incomingCalls.incomingUnanswered} />
+                <MetricCard label="Avg. Incoming Call Duration" value={metrics.incomingCalls.avgIncomingDuration} />
+              </View>
+
+              {/* <SectionHeader title="Follow up Report" info />
             <View style={styles.grid}>
               <MetricCard label="Follow Ups Due Today" value={metrics.followUpReport.dueToday} />
               <MetricCard label="Follow Ups Missed Yesterday" value={metrics.followUpReport.missedYesterday} />
@@ -296,7 +290,7 @@ export const CallAnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation 
               <MetricCard label="Compliance%" value={metrics.followUpReport.compliance} info />
             </View> */}
 
-            {/* <SectionHeader title="Dispositions" />
+              {/* <SectionHeader title="Dispositions" />
             <View style={styles.grid}>
               <MetricCard label="Total Disposed count" value={metrics.dispositions.totalDisposed} />
               <MetricCard label="Disposed Connected count" value={metrics.dispositions.disposedConnected} />
@@ -304,7 +298,7 @@ export const CallAnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation 
               <MetricCard label="Converted" value={metrics.dispositions.converted} />
             </View> */}
 
-            {/* <SectionHeader title="Activity Report" />
+              {/* <SectionHeader title="Activity Report" />
             <View style={styles.grid}>
               <MetricCard label="Total Break count" value={metrics.activityReport.totalBreakCount} />
               <MetricCard label="Total Break Duration" value={metrics.activityReport.totalBreakDuration} />
@@ -319,12 +313,13 @@ export const CallAnalyticsScreen: React.FC<{ navigation: any }> = ({ navigation 
                 <Text style={styles.emptyText}>No Message Activity Recorded</Text>
               </View>
             </View> */}
-          </View>
-        ) : null}
-      </ScrollView>
+            </View>
+          ) : null}
+        </ScrollView>
 
-      <CustomRangeModal />
-    </SafeAreaView>
+        <CustomRangeModal />
+      </SafeAreaView>
+    </ScreenWrapper >
   );
 };
 

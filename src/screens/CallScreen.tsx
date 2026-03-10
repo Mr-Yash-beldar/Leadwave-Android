@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, NativeEventEmitter, NativeModules, Dimensions, Image } from 'react-native';
 import { Mic, MicOff, Phone, Volume2, VolumeX, Pause } from 'lucide-react-native';
 import { colors } from '../theme/colors';
-
+import { ScreenWrapper } from '../components/ScreenWrapper';
 const { PhoneModule } = NativeModules;
 const { width } = Dimensions.get('window');
 
@@ -128,44 +128,46 @@ export const CallScreen = ({ navigation, route }: any) => {
     };
 
     return (
-        <View style={styles.container}>
-            <View style={styles.topSection}>
-                <View style={styles.avatarContainer}>
-                    <Text style={styles.avatarText}>{name ? name[0] : (number ? number[0] : '?')}</Text>
-                </View>
-                <Text style={styles.name}>{name || 'Unknown'}</Text>
-                <Text style={styles.number}>{number}</Text>
-                <Text style={styles.status}>{callState}</Text>
-                {isRecording && <Text style={styles.recordingText}>● Recording</Text>}
-                {recordingPath && <Text style={styles.pathText} numberOfLines={1}>{recordingPath.split('/').pop()}</Text>}
-                {(callState === 'Connected' || callState === 'Dialing...') && (
-                    <Text style={styles.timer}>{formatTime(duration)}</Text>
-                )}
-            </View>
-
-            <View style={styles.controlsContainer}>
-                <View style={styles.row}>
-                    <TouchableOpacity style={[styles.controlBtn, isMuted && styles.activeControl]} onPress={toggleMute}>
-                        {isMuted ? <MicOff color={isMuted ? "black" : "white"} size={32} /> : <Mic color="white" size={32} />}
-                        <Text style={[styles.controlLabel, isMuted && { color: 'black' }]}>Mute</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={[styles.controlBtn, isHold && styles.activeControl]} onPress={toggleHold}>
-                        <Pause color={isHold ? "black" : "white"} size={32} />
-                        <Text style={[styles.controlLabel, isHold && { color: 'black' }]}>Hold</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={[styles.controlBtn, isSpeaker && styles.activeControl]} onPress={toggleSpeaker}>
-                        {isSpeaker ? <Volume2 color={isSpeaker ? "black" : "white"} size={32} /> : <VolumeX color="white" size={32} />}
-                        <Text style={[styles.controlLabel, isSpeaker && { color: 'black' }]}>Speaker</Text>
-                    </TouchableOpacity>
+        <ScreenWrapper navigation={navigation} title="Screen Title">
+            <View style={styles.container}>
+                <View style={styles.topSection}>
+                    <View style={styles.avatarContainer}>
+                        <Text style={styles.avatarText}>{name ? name[0] : (number ? number[0] : '?')}</Text>
+                    </View>
+                    <Text style={styles.name}>{name || 'Unknown'}</Text>
+                    <Text style={styles.number}>{number}</Text>
+                    <Text style={styles.status}>{callState}</Text>
+                    {isRecording && <Text style={styles.recordingText}>● Recording</Text>}
+                    {recordingPath && <Text style={styles.pathText} numberOfLines={1}>{recordingPath.split('/').pop()}</Text>}
+                    {(callState === 'Connected' || callState === 'Dialing...') && (
+                        <Text style={styles.timer}>{formatTime(duration)}</Text>
+                    )}
                 </View>
 
-                <TouchableOpacity style={styles.endCallBtn} onPress={handleEndCall}>
-                    <Phone color="white" size={40} style={{ transform: [{ rotate: '135deg' }] }} />
-                </TouchableOpacity>
+                <View style={styles.controlsContainer}>
+                    <View style={styles.row}>
+                        <TouchableOpacity style={[styles.controlBtn, isMuted && styles.activeControl]} onPress={toggleMute}>
+                            {isMuted ? <MicOff color={isMuted ? "black" : "white"} size={32} /> : <Mic color="white" size={32} />}
+                            <Text style={[styles.controlLabel, isMuted && { color: 'black' }]}>Mute</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={[styles.controlBtn, isHold && styles.activeControl]} onPress={toggleHold}>
+                            <Pause color={isHold ? "black" : "white"} size={32} />
+                            <Text style={[styles.controlLabel, isHold && { color: 'black' }]}>Hold</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={[styles.controlBtn, isSpeaker && styles.activeControl]} onPress={toggleSpeaker}>
+                            {isSpeaker ? <Volume2 color={isSpeaker ? "black" : "white"} size={32} /> : <VolumeX color="white" size={32} />}
+                            <Text style={[styles.controlLabel, isSpeaker && { color: 'black' }]}>Speaker</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity style={styles.endCallBtn} onPress={handleEndCall}>
+                        <Phone color="white" size={40} style={{ transform: [{ rotate: '135deg' }] }} />
+                    </TouchableOpacity>
+                </View>
             </View>
-        </View>
+        </ScreenWrapper>
     );
 };
 

@@ -105,7 +105,7 @@ const AddLeadModal = memo(({
       const res = await api.getCampaigns();
       if (res?.data) setCampaigns(res.data);
     } catch (error) {
-      console.log('Error fetching campaigns', error);
+      // console.log('Error fetching campaigns', error);
     } finally {
       setLoadingCampaigns(false);
     }
@@ -125,7 +125,7 @@ const AddLeadModal = memo(({
       setSelectedCampaign('');
       onClose();
     } catch (error) {
-      Alert.alert('Error', 'Failed to create lead.');
+      Alert.alert('Message', 'Lead not created');
     } finally {
       setLoading(false);
     }
@@ -355,7 +355,7 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo((
       }
       return;
     }
-    console.log('item', item);
+    // console.log('item', item);
 
     // ASSIGNED TO SOMEONE ELSE: show info, don't navigate
     if (item.isAssignedToOther) {
@@ -427,7 +427,7 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo((
       }
       return false;
     } catch (error) {
-      console.log('Error checking lead:', error);
+      // console.log('Error checking lead:', error);
       return false;
     } finally {
       setCheckingLead(false);
@@ -469,16 +469,22 @@ export const CallLogItem: React.FC<CallLogItemProps> = memo((
           onPress={handleCardPress}
           activeOpacity={0.7}
         >
-          {/* Avatar icon: 4 states */}
-          <View style={[styles.avatar, { backgroundColor: isMyLead ? color : item.isAssignedToOther ? '#9E9E9E' : item.canAssignSelf ? '#FFA000' : color }]}>
-            {isMyLead
-              ? <User size={20} color="white" />
-              : item.isAssignedToOther
-                ? <User size={20} color="white" />        // assigned to someone else
-                : item.canAssignSelf
-                  ? <UserCheck size={20} color="white" /> // unassigned — can assign
-                  : <UserPlus size={20} color="white" />  // not in DB
-            }
+          {/* Avatar icon: 4 states + call-type badge */}
+          <View style={styles.avatarWrapper}>
+            <View style={[styles.avatar, { backgroundColor: isMyLead ? color : item.isAssignedToOther ? '#9E9E9E' : item.canAssignSelf ? '#FFA000' : color }]}>
+              {isMyLead
+                ? <User size={20} color="white" />
+                : item.isAssignedToOther
+                  ? <User size={20} color="white" />
+                  : item.canAssignSelf
+                    ? <UserCheck size={20} color="white" />
+                    : <UserPlus size={20} color="white" />
+              }
+            </View>
+            {/* Direction badge — bottom-right of avatar */}
+            <View style={[styles.callBadge, { backgroundColor: color }]}>
+              <TypeIcon size={10} color="white" />
+            </View>
           </View>
 
           <View style={styles.info}>
@@ -638,13 +644,30 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'flex-start',
   },
+  avatarWrapper: {
+    position: 'relative',
+    marginRight: 12,
+    width: 48,
+    height: 48,
+  },
   avatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+  },
+  callBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#fff',
   },
   info: {
     flex: 1,

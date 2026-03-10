@@ -17,7 +17,7 @@ import {
   ClipboardList, // ← Added this import
 } from 'lucide-react-native';
 import { colors } from '../theme/colors';
-
+import { ScreenWrapper } from '../components/ScreenWrapper';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - 48) / 2; // 16px left + 16px right + 16px gap
 
@@ -62,6 +62,8 @@ export const DashboardScreen: React.FC = () => {
   }
 
   return (
+          <ScreenWrapper navigation={navigation} title="Screen Title">
+
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Dashboard</Text>
@@ -103,6 +105,7 @@ export const DashboardScreen: React.FC = () => {
         ))}
       </ScrollView>
     </SafeAreaView>
+    </ScreenWrapper>
   );
 };
 

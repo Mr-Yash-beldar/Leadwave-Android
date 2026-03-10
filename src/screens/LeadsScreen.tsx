@@ -12,23 +12,90 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ChevronRight,
-  ChevronLeft,
   Search,
-  Filter,
   Clock,
   UserPlus,
-  PhoneOff,
-  User
+  CheckSquare,
+  BarChart2,
 } from 'lucide-react-native';
 import { colors } from '../theme/colors';
 import { useNavigation } from '@react-navigation/native';
 import { LeadsService } from '../services/LeadsService';
 import { Lead } from '../types/Lead';
+import { ScreenWrapper } from '../components/ScreenWrapper';
 
+type TabType = 'myLeads' | 'myTasks' | 'stages';
 type ViewType = 'dashboard' | 'list';
 type CategoryType = 'new' | 'followup' | 'notConnected';
 
+// ─── Coming Soon Placeholder ───────────────────────────────────────────────────
+const ComingSoonView = ({ title, subtitle }: { title: string; subtitle: string }) => (
+  <View style={csStyles.container}>
+    <View style={csStyles.iconCircle}>
+      {title === 'My Tasks' ?
+        <CheckSquare size={36} color={colors.primary} /> :
+        <BarChart2 size={36} color={colors.primary} />
+      }
+    </View>
+    <Text style={csStyles.title}>{title}</Text>
+    <Text style={csStyles.subtitle}>{subtitle}</Text>
+    <View style={csStyles.badge}>
+      <Text style={csStyles.badgeText}>🚀  Coming Soon</Text>
+    </View>
+  </View>
+);
+
+const csStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: '#F8F9FE',
+  },
+  iconCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    borderWidth: 2,
+    borderColor: colors.primary + '33',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 10,
+  },
+  subtitle: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  badge: {
+    backgroundColor: colors.primary + '18',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.primary + '44',
+  },
+  badgeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+    letterSpacing: 0.4,
+  },
+});
+
+// ─── Main Screen ───────────────────────────────────────────────────────────────
 export const LeadsScreen = () => {
+  const [activeTab, setActiveTab] = useState<TabType>('myLeads');
   const [view, setView] = useState<ViewType>('dashboard');
   const [selectedCategory, setSelectedCategory] = useState<CategoryType | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -66,7 +133,6 @@ export const LeadsScreen = () => {
   const filteredLeads = useMemo(() => {
     let result = leads;
 
-    // Filter by Category
     if (selectedCategory === 'new') {
       result = result.filter((l: Lead) => !l.last_contacted_date);
     } else if (selectedCategory === 'followup') {
@@ -75,7 +141,6 @@ export const LeadsScreen = () => {
       result = result.filter((l: Lead) => l.leadStatus === 'Not Connected' || l.status === 'Not Connected');
     }
 
-    // Filter by Search Query
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       result = result.filter((l: Lead) =>
@@ -95,10 +160,45 @@ export const LeadsScreen = () => {
       case 'new': return 'New Leads';
       case 'followup': return 'Follow-up Leads';
       case 'notConnected': return 'Not Connected Leads';
-      default: return 'Leads';
+      default: return 'My Leads';
     }
   };
 
+  const getScreenTitle = () => {
+    if (activeTab === 'myTasks') return 'My Tasks';
+    if (activeTab === 'stages') return 'Stages';
+    return view === 'dashboard' ? 'My Leads' : getCategoryTitle();
+  };
+
+  // ── Tab Bar ─────────────────────────────────────────────────────────────────
+  const renderTabBar = () => (
+    <View style={styles.tabBar}>
+      {[
+        { key: 'myLeads', label: 'My Leads' },
+        { key: 'myTasks', label: 'My Tasks' },
+        { key: 'stages', label: 'Stages' },
+      ].map(({ key, label }) => (
+        <TouchableOpacity
+          key={key}
+          style={[styles.tabItem, activeTab === key && styles.tabItemActive]}
+          onPress={() => {
+            setActiveTab(key as TabType);
+            if (key === 'myLeads') {
+              setView('dashboard');
+              setSelectedCategory(null);
+            }
+          }}
+        >
+          <Text style={[styles.tabLabel, activeTab === key && styles.tabLabelActive]}>
+            {label}
+          </Text>
+          {activeTab === key && <View style={styles.tabUnderline} />}
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  // ── My Leads: Dashboard ──────────────────────────────────────────────────────
   const renderDashboard = () => (
     <View style={styles.dashboardContainer}>
       <Text style={styles.sectionTitle}>Lead Categories</Text>
@@ -115,7 +215,7 @@ export const LeadsScreen = () => {
         </View>
         <View style={styles.categoryInfo}>
           <Text style={styles.categoryTitle}>New Leads</Text>
-          <Text style={styles.categorySubtitle}>Leads, which haven't been called so far</Text>
+          <Text style={styles.categorySubtitle}>Leads which haven't been called so far</Text>
         </View>
         <ChevronRight size={24} color={colors.primary} />
       </TouchableOpacity>
@@ -132,43 +232,28 @@ export const LeadsScreen = () => {
         </View>
         <View style={styles.categoryInfo}>
           <Text style={styles.categoryTitle}>Follow-up Leads</Text>
-          <Text style={styles.categorySubtitle}>Leads, which are scheduled to be called later</Text>
+          <Text style={styles.categorySubtitle}>Leads scheduled to be called later</Text>
         </View>
         <ChevronRight size={24} color={colors.primary} />
       </TouchableOpacity>
-
-      {/* <TouchableOpacity
-        style={styles.categoryCard}
-        onPress={() => {
-          setSelectedCategory('notConnected');
-          setView('list');
-        }}
-      >
-        <View style={[styles.categoryIconContainer, { backgroundColor: '#F44336' }]}>
-          <PhoneOff size={24} color={colors.white} />
-        </View>
-        <View style={styles.categoryInfo}>
-          <Text style={styles.categoryTitle}>Not Connected Leads</Text>
-          <Text style={styles.categorySubtitle}>Leads, which were not connected in previous attempt</Text>
-        </View>
-        <ChevronRight size={24} color={colors.primary} />
-      </TouchableOpacity> */}
     </View>
   );
 
+  // ── My Leads: List ───────────────────────────────────────────────────────────
   const renderLeadItem = ({ item }: { item: Lead }) => (
-    <TouchableOpacity
-      style={styles.leadCard}
-      onPress={() => handleLeadPress(item)}
-    >
+    <TouchableOpacity style={styles.leadCard} onPress={() => handleLeadPress(item)}>
       <View style={styles.cardHeader}>
         <View style={styles.labelCol}>
           <Text style={styles.cardLabel}>Contact Name</Text>
-          <Text style={styles.cardValue}>{`${item.firstName || ''} ${item.lastName || ''}`.trim() || item.name || 'Unknown'}</Text>
+          <Text style={styles.cardValue}>
+            {`${item.firstName || ''} ${item.lastName || ''}`.trim() || item.name || 'Unknown'}
+          </Text>
         </View>
         <View style={[styles.labelCol, { alignItems: 'flex-end' }]}>
           <Text style={styles.cardLabel}>Campaign Name</Text>
-          <Text style={styles.cardValue} numberOfLines={1}>{item.campaignName || item.campaign?.name || 'General'}</Text>
+          <Text style={styles.cardValue} numberOfLines={1}>
+            {item.campaignName || item.campaign?.name || 'General'}
+          </Text>
         </View>
       </View>
 
@@ -177,7 +262,9 @@ export const LeadsScreen = () => {
       <View style={styles.cardFooter}>
         <View style={styles.footerCol}>
           <Text style={styles.cardLabel}>Lead Stage</Text>
-          <Text style={[styles.cardValue, styles.statusValue]}>{item.leadStatus || item.status || 'OPEN'}</Text>
+          <Text style={[styles.cardValue, styles.statusValue]}>
+            {item.leadStatus || item.status || 'OPEN'}
+          </Text>
         </View>
         <View style={styles.footerCol}>
           <Text style={styles.cardLabel}>Follow-up</Text>
@@ -198,61 +285,76 @@ export const LeadsScreen = () => {
         keyExtractor={(item) => item._id || item.id || Math.random().toString()}
         renderItem={renderLeadItem}
         contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={
           <View style={styles.center}>
             <Text style={styles.emptyText}>No leads found in this category.</Text>
           </View>
         }
       />
-
-
-
     </View>
   );
 
-  if (loading) {
-    return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        {view === 'list' ? (
-          <TouchableOpacity onPress={() => setView('dashboard')} style={styles.backButton}>
-            <ChevronLeft size={28} color={colors.black} />
-          </TouchableOpacity>
-        ) : <View style={{ width: 40, }} />}
+    <ScreenWrapper
+      navigation={navigation}
+      title={getScreenTitle()}
+      onBackPress={() => {
+        if (activeTab === 'myLeads' && view === 'list') {
+          setView('dashboard');
+          setSelectedCategory(null);
+          return true;
+        }
+        return false;
+      }}
+      rightComponent={<TouchableOpacity style={styles.filterButton} />}
+    >
+      <SafeAreaView style={styles.container} edges={['bottom']}>
+        {/* Top Tab Bar */}
+        {renderTabBar()}
 
-        <Text style={styles.headerTitle}>{view === 'dashboard' ? 'My Leads' : getCategoryTitle()}</Text>
+        {/* Tab Content */}
+        {activeTab === 'myLeads' && (
+          <>
+            {loading ? (
+              <View style={[styles.container, styles.center]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : (
+              <>
+                {/* Search Bar (list view only) */}
+                {view === 'list' && (
+                  <View style={styles.searchContainer}>
+                    <Search size={20} color={colors.textSecondary} style={styles.searchIcon} />
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Search leads..."
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                    />
+                  </View>
+                )}
+                {view === 'dashboard' ? renderDashboard() : renderListView()}
+              </>
+            )}
+          </>
+        )}
 
-        <TouchableOpacity style={styles.filterButton}>
-          {/* // <Filter size={24} color={colors.black} /> */}
-        </TouchableOpacity>
-      </View>
-
-      {/* Search Bar (Only shown in list view) */}
-      {view === 'list' && (
-        <View style={styles.searchContainer}>
-          <Search size={20} color={colors.textSecondary} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search leads..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
+        {activeTab === 'myTasks' && (
+          <ComingSoonView
+            title="My Tasks"
+            subtitle={"Tasks assigned by your manager will appear here.\nStay tuned!"}
           />
-        </View>
-      )}
+        )}
 
-      {view === 'dashboard' ? renderDashboard() : renderListView()}
-    </SafeAreaView>
+        {activeTab === 'stages' && (
+          <ComingSoonView
+            title="Stages"
+            subtitle={"Track leads by their current stage in the pipeline.\nComing soon!"}
+          />
+        )}
+      </SafeAreaView>
+    </ScreenWrapper>
   );
 };
 
@@ -266,25 +368,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  header: {
-    padding: 16,
-    backgroundColor: colors.primary,
+  // ── Tab Bar ──────────────────────────────────────────────────────────────────
+  tabBar: {
     flexDirection: 'row',
+    backgroundColor: colors.white,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+  },
+  tabItem: {
+    flex: 1,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    elevation: 4,
+    paddingVertical: 13,
+    position: 'relative',
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.black,
+  tabItemActive: {},
+  tabLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
-  backButton: {
-    padding: 4,
+  tabLabelActive: {
+    color: colors.primary,
   },
-  filterButton: {
-    padding: 4,
+  tabUnderline: {
+    position: 'absolute',
+    bottom: 0,
+    left: 12,
+    right: 12,
+    height: 3,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
   },
+  // ── Search ───────────────────────────────────────────────────────────────────
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -304,6 +422,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
   },
+  // ── Dashboard ─────────────────────────────────────────────────────────────────
   dashboardContainer: {
     flex: 1,
     padding: 16,
@@ -349,6 +468,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  // ── Lead List ─────────────────────────────────────────────────────────────────
   listContainer: {
     flex: 1,
   },
@@ -403,31 +523,13 @@ const styles = StyleSheet.create({
     color: colors.primaryDark,
     fontWeight: 'bold',
   },
-  startCallingButton: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-    right: 24,
-    backgroundColor: colors.primary,
-    height: 56,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 5,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  startCallingText: {
-    color: colors.black,
-    fontSize: 18,
-    fontWeight: 'bold',
+  filterButton: {
+    padding: 4,
   },
   emptyText: {
     fontSize: 16,
     color: colors.textSecondary,
     textAlign: 'center',
     marginTop: 40,
-  }
+  },
 });

@@ -1,13 +1,17 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { colors } from '../theme/colors';
+import { ScreenWrapper } from '../components/ScreenWrapper';
 
-export const HomeScreen: React.FC<{ title: string }> = ({ title }) => {
+// Add navigation to props
+export const HomeScreen: React.FC<{ navigation: any; title: string }> = ({ navigation, title }) => {
   return (
-    <View style={styles.container}>
-      <Text style={styles.text}>{title}</Text>
-      <Text style={styles.subtext}>Coming Soon</Text>
-    </View>
+    <ScreenWrapper navigation={navigation} title={title}>
+      <View style={styles.container}>
+        <Text style={styles.text}>{title}</Text>
+        <Text style={styles.subtext}>Coming Soon</Text>
+      </View>
+    </ScreenWrapper>
   );
 };
 

@@ -2,6 +2,7 @@ export const colors = {
     primary: '#FFC107', // Callyzer Yellow
     primaryDark: '#FFA000', // Darker yellow for active states
     secondary: '#2E86C1', // Blue (used in illustrations/accents)
+    info: '#0895f3', // Blue (used in illustrations/accents)
     background: '#FFFFFF',
     surface: '#FFFFFF',
     text: '#333333',

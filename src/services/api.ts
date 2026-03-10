@@ -171,7 +171,7 @@ export const api = {
     getLeadById: async (id: string) => {
         try {
             const response = await apiClient.get('/leads/getLeadbyid', { params: { id } });
-            console.log('Get Lead Response:', response.data);
+            // console.log('Get Lead Response:', response.data);
             return response.data?.data || response.data?.lead || response.data;
 
         } catch (error: any) {

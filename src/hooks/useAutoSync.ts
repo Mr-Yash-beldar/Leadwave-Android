@@ -5,7 +5,7 @@ import { CallLogService } from '../services/CallLogService';
 import { api } from '../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const SYNC_INTERVAL = 60 * 1000; // 1 Minute
+const SYNC_INTERVAL = 10 * 1000; // 1 Minute
 
 
 export const useAutoSync = () => {

@@ -5,7 +5,7 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { ArrowLeft, CheckCircle2, Clock, Calendar, FileText } from 'lucide-react-native';
 import { colors } from '../theme/colors';
 import { LeadsService } from '../services/LeadsService';
-
+import { ScreenWrapper } from '../components/ScreenWrapper';
 export const CallSummaryScreen = () => {
     const route = useRoute<any>();
     const navigation = useNavigation<any>();
@@ -14,7 +14,7 @@ export const CallSummaryScreen = () => {
 
     const handleSubmit = async () => {
 
-        console.log("Form Data:", JSON.stringify(formData, null, 2));
+        // console.log("Form Data:", JSON.stringify(formData, null, 2));
         setSubmitting(true);
         try {
             // Prepare payload according to API requirements
@@ -55,7 +55,7 @@ export const CallSummaryScreen = () => {
 
             await LeadsService.updateLeadBySalesperson(payload);
 
-            Alert.alert("Success", "Call log stored and lead updated successfully", [
+            Alert.alert("Success", " Lead Disposed Successfully", [
                 {
                     text: "OK",
                     onPress: () => {
@@ -72,7 +72,7 @@ export const CallSummaryScreen = () => {
             if (error.response && error.response.status === 409) {
                 Alert.alert("Warning", "We can't respond to the same lead");
             } else {
-                Alert.alert("Error", error.message);
+                // Alert.alert("Error", error.message);
             };
         } finally {
             setSubmitting(false);
@@ -86,89 +86,91 @@ export const CallSummaryScreen = () => {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-                    <ArrowLeft size={24} color={colors.text} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Call Summary</Text>
-                <View style={{ width: 24 }} />
-            </View>
+        <ScreenWrapper navigation={navigation} title="Call Summary">
+            <SafeAreaView style={styles.container}>
+                {/* <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
+                        <ArrowLeft size={24} color={colors.text} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Call Summary</Text>
+                    <View style={{ width: 24 }} />
+                </View> */}
 
-            <ScrollView style={styles.content}>
-                {/* Call Details Card */}
-                <View style={styles.card}>
-                    <Text style={styles.sectionTitle}>Call Details</Text>
-                    <View style={styles.divider} />
+                <ScrollView style={styles.content}>
+                    {/* Call Details Card */}
+                        {/* <View style={styles.card}>
+                            <Text style={styles.sectionTitle}>Call Details</Text>
+                            <View style={styles.divider} />
 
-                    <View style={styles.row}>
-                        <View style={styles.iconBox}><Clock size={20} color={colors.primary} /></View>
-                        <View style={styles.infoBox}>
-                            <Text style={styles.label}>Duration</Text>
-                            <Text style={styles.value}>
-                                {callLog ? formatDuration(callLog.duration) : '0:00'}
-                            </Text>
-                        </View>
-                    </View>
-
-                    <View style={styles.row}>
-                        <View style={styles.iconBox}><Calendar size={20} color={colors.primary} /></View>
-                        <View style={styles.infoBox}>
-                            <Text style={styles.label}>Time</Text>
-                            <Text style={styles.value}>
-                                {callLog ? new Date(callLog.timestamp).toLocaleString() : new Date().toLocaleString()}
-                            </Text>
-                        </View>
-                    </View>
-
-                    {callLog?.recordingPath && (
-                        <View style={styles.row}>
-                            <View style={styles.iconBox}><FileText size={20} color={colors.primary} /></View>
-                            <View style={styles.infoBox}>
-                                <Text style={styles.label}>Recording</Text>
-                                <Text style={styles.value} numberOfLines={1} ellipsizeMode="middle">
-                                    {callLog.recordingPath.split('/').pop()}
-                                </Text>
+                            <View style={styles.row}>
+                                <View style={styles.iconBox}><Clock size={20} color={colors.primary} /></View>
+                                <View style={styles.infoBox}>
+                                    <Text style={styles.label}>Duration</Text>
+                                    <Text style={styles.value}>
+                                        {callLog ? formatDuration(callLog.duration) : '0:00'}
+                                    </Text>
+                                </View>
                             </View>
-                        </View>
-                    )}
-                </View>
 
-                {/* Disposition Data Card */}
-                <View style={styles.card}>
-                    <Text style={styles.sectionTitle}>Disposition Details</Text>
-                    <View style={styles.divider} />
-
-                    <DetailItem label="Lead Name" value={leadName || 'Unknown'} />
-                    <DetailItem label="Status" value={formData.status.toUpperCase()} />
-                    <DetailItem label="Follow Up" value={new Date(formData.followUpDate).toDateString()} />
-                    <DetailItem label="Contacted" value={formData.connected ? "Yes" : "No"} />
-
-                    {formData.connected && (
-                        <>
-                            <DetailItem label="Expected Value" value={formData.expectedValue || '-'} />
-                            <View style={styles.descBox}>
-                                <Text style={styles.label}>Description:</Text>
-                                <Text style={styles.descText}>{formData.description || 'No description provided.'}</Text>
+                            <View style={styles.row}>
+                                <View style={styles.iconBox}><Calendar size={20} color={colors.primary} /></View>
+                                <View style={styles.infoBox}>
+                                    <Text style={styles.label}>Time</Text>
+                                    <Text style={styles.value}>
+                                        {callLog ? new Date(callLog.timestamp).toLocaleString() : new Date().toLocaleString()}
+                                    </Text>
+                                </View>
                             </View>
-                        </>
-                    )}
-                </View>
-            </ScrollView>
 
-            <View style={styles.footer}>
-                <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} disabled={submitting}>
-                    {submitting ? (
-                        <Text style={styles.submitText}>Submitting...</Text>
-                    ) : (
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <CheckCircle2 size={20} color={colors.black} style={{ marginRight: 8 }} />
-                            <Text style={styles.submitText}>Confirm & Submit</Text>
-                        </View>
-                    )}
-                </TouchableOpacity>
-            </View>
-        </SafeAreaView>
+                            {callLog?.recordingPath && (
+                                <View style={styles.row}>
+                                    <View style={styles.iconBox}><FileText size={20} color={colors.primary} /></View>
+                                    <View style={styles.infoBox}>
+                                        <Text style={styles.label}>Recording</Text>
+                                        <Text style={styles.value} numberOfLines={1} ellipsizeMode="middle">
+                                            {callLog.recordingPath.split('/').pop()}
+                                        </Text>
+                                    </View>
+                                </View>
+                            )}
+                        </View> */}
+
+                    {/* Disposition Data Card */}
+                    <View style={styles.card}>
+                        <Text style={styles.sectionTitle}>Disposition Details</Text>
+                        <View style={styles.divider} />
+
+                        <DetailItem label="Lead Name" value={leadName || 'Unknown'} />
+                        <DetailItem label="Status" value={formData.status.toUpperCase()} />
+                        <DetailItem label="Follow Up" value={new Date(formData.followUpDate).toDateString()} />
+                        <DetailItem label="Contacted" value={formData.connected ? "Yes" : "No"} />
+
+                        {formData.connected && (
+                            <>
+                                <DetailItem label="Expected Value" value={formData.expectedValue || '-'} />
+                                <View style={styles.descBox}>
+                                    <Text style={styles.label}>Description:</Text>
+                                    <Text style={styles.descText}>{formData.description || 'No description provided.'}</Text>
+                                </View>
+                            </>
+                        )}
+                    </View>
+                </ScrollView>
+
+                <View style={styles.footer}>
+                    <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit} disabled={submitting}>
+                        {submitting ? (
+                            <Text style={styles.submitText}>Submitting...</Text>
+                        ) : (
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <CheckCircle2 size={20} color={colors.black} style={{ marginRight: 8 }} />
+                                <Text style={styles.submitText}>Confirm & Submit</Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        </ScreenWrapper>
     );
 };
 
