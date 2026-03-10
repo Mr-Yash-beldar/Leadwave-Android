@@ -20,6 +20,7 @@ public class PhonePackage implements ReactPackage {
         List<NativeModule> modules = new ArrayList<>();
         modules.add(new PhoneModule(reactContext));
         modules.add(new RoleManagerModule(reactContext));
+        modules.add(new OverlayModule(reactContext));
         return modules;
     }
 }

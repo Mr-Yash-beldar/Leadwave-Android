@@ -42,6 +42,8 @@
       </service>
 
       <service android:name=".RecordingUploadTaskService" />
+      <service android:name=".BackgroundCallTaskService" />
+      <service android:name=".IncomingCallLookupTaskService" />
 
       <!-- Background call receiver: fires even when app is closed -->
       <receiver

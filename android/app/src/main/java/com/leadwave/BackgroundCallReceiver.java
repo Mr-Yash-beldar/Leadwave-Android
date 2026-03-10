@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Bundle;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 
@@ -90,6 +91,21 @@ public class BackgroundCallReceiver extends BroadcastReceiver {
                      .apply();
 
                 Log.d(TAG, "Pending call saved: " + lastNumber + " (" + callType + ", " + durationSec + "s)");
+
+                // Launch Headless JS Task immediately
+                try {
+                    Intent serviceIntent = new Intent(context, BackgroundCallTaskService.class);
+                    Bundle bundle = new Bundle();
+                    bundle.putString("phoneNumber", lastNumber);
+                    bundle.putInt("duration", durationSec);
+                    bundle.putString("callType", callType);
+                    bundle.putLong("timestamp", System.currentTimeMillis());
+                    serviceIntent.putExtras(bundle);
+                    context.startService(serviceIntent);
+                    Log.d(TAG, "Headless JS Task BackgroundCallTaskService launched");
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to launch Headless JS for call", e);
+                }
             }
 
             // Reset

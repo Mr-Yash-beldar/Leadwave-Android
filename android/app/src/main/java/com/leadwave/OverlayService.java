@@ -21,8 +21,22 @@ public class OverlayService extends Service {
     private WindowManager windowManager;
     private View overlayView;
 
+    private String leadName;
+    private String phoneNumberStr;
+    private boolean isLead;
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null) {
+            String action = intent.getAction();
+            if ("CLOSE_OVERLAY".equals(action)) {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+            leadName = intent.getStringExtra("leadName");
+            phoneNumberStr = intent.getStringExtra("phoneNumber");
+            isLead = intent.getBooleanExtra("isLead", false);
+        }
         startForeground(1, createNotification());
         showOverlay();
         return START_NOT_STICKY;
@@ -33,19 +47,25 @@ public class OverlayService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     channelId,
-                    "Overlay Service",
+                    "Leadwave Caller ID",
                     NotificationManager.IMPORTANCE_LOW);
             getSystemService(NotificationManager.class)
                     .createNotificationChannel(channel);
         }
         return new NotificationCompat.Builder(this, channelId)
-                .setContentTitle("Call Ended")
-                .setContentText("Showing popup")
+                .setContentTitle("Leadwave Caller ID")
+                .setContentText("Identifying incoming call...")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .build();
     }
 
     private void showOverlay() {
+        if (overlayView != null) {
+            // Already showing, just update text
+            updateOverlayText();
+            return;
+        }
+
         windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
 
         overlayView = LayoutInflater.from(this)
@@ -67,6 +87,30 @@ public class OverlayService extends Service {
 
         overlayView.findViewById(R.id.btnClose)
                 .setOnClickListener(v -> stopSelf());
+
+        updateOverlayText();
+    }
+
+    private void updateOverlayText() {
+        if (overlayView != null) {
+            android.widget.TextView txtTitle = overlayView.findViewById(R.id.txtTitle);
+            android.widget.TextView txtNumber = overlayView.findViewById(R.id.txtNumber);
+
+            if (txtNumber != null && phoneNumberStr != null) {
+                txtNumber.setText(phoneNumberStr);
+                txtNumber.setVisibility(View.VISIBLE);
+            }
+
+            if (txtTitle != null) {
+                if (isLead && leadName != null) {
+                    txtTitle.setText("Lead: " + leadName);
+                    txtTitle.setTextColor(android.graphics.Color.parseColor("#4CAF50")); // Green
+                } else {
+                    txtTitle.setText("Unknown Caller");
+                    txtTitle.setTextColor(android.graphics.Color.parseColor("#F44336")); // Red
+                }
+            }
+        }
     }
 
     @Override
